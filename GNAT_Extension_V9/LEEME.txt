@@ -1,0 +1,23 @@
+CENTRALITY LOCAL V9 — Extensión Chrome
+
+Instalación
+1. Actualiza el repositorio con git pull en la rama main.
+2. Abre chrome://extensions, habilita Modo de desarrollador si lo permite TI.
+3. Pulsa Cargar descomprimida y selecciona GNAT_Extension_V9 de este repositorio.
+4. Desactiva la extensión V8 si ambas muestran el mismo botón y evita ejecutar ambas simultáneamente.
+5. Entra en GNAT → Mapas y pulsa el icono de V9.
+
+Uso
+- En el mapa, utiliza búsqueda de códigos, filtro de zona y botones Original / Forzar +1 / Forzar +2.
+- Pulsa Abrir planilla para administrar Zonas, Recorrido y Aperturas.
+- Zonas: pulsa + Agregar fila, asigna nombre/responsable/color y Editar zona para pegar códigos.
+- Los códigos pegados en una zona deben existir en las tablas (con coordenadas). La búsqueda GNAT automática aún no está implementada.
+- Las aperturas se muestran como X rojas, independientemente de la paleta.
+- Usa Guardar proyecto JSON como formato principal; admite proyectos anteriores V8.
+- CSV desde la planilla es solo exportación de consulta humana, sin IDs internos.
+- El atlas PDF está oculto temporalmente; no utilizarlo para operación.
+
+IMPORTANTE
+- La asociación de aperturas es un dato de planificación, no determina condiciones de desenergización.
+- No altera datos del servidor GNAT. Los archivos JSON reales no deben publicarse en repositorios públicos.
+- Guarda el JSON antes de cerrar o recargar la pestaña de GNAT.

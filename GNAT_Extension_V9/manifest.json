@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Centrality Local V9",
+  "version": "9.0.0",
+  "description": "Centrality Local V9: mapa compacto, zonas editables y planilla JSON",
+  "action": {
+    "default_title": "Abrir Centrality Local V9"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
