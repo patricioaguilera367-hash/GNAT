@@ -1,4 +1,4 @@
-CENTRALITY LOCAL V9 — Extensión Chrome
+CENTRALITY LOCAL V9.1 — Extensión Chrome
 
 Instalación
 1. Actualiza el repositorio con git pull en la rama main.
@@ -21,3 +21,5 @@ IMPORTANTE
 - La asociación de aperturas es un dato de planificación, no determina condiciones de desenergización.
 - No altera datos del servidor GNAT. Los archivos JSON reales no deben publicarse en repositorios públicos.
 - Guarda el JSON antes de cerrar o recargar la pestaña de GNAT.
+
+Cambios V9.1: los puntos toman exclusivamente el color de su supervisor; el color de zona es solo identificador organizativo. La lista de puntos, bajo el buscador, ofrece coincidencias filtradas. Aperturas siempre X rojas.

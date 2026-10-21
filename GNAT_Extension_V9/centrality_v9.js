@@ -1,5 +1,5 @@
 /*
- * CENTRALITY V9 - PLANILLA / VINCULOS COMPARTIDOS / BLOQUES / PLANOS
+ * CENTRALITY V9.1 - PLANILLA / SUPERVISORES / ZONAS / MAPA
  * Ejecutar en la consola del navegador con el mapa de Centrality abierto.
  * Lee archivos locales. No envia archivos ni cambia datos de Centrality.
  * Los colores y filtros se guardan en el proyecto JSON; CSV solo guarda las categorias.
@@ -370,9 +370,13 @@
   crear(filtroBloqueFila, "span", "Ver bloque:", "font-size:12px;white-space:nowrap;");
   const filtroBloqueTrabajo = crear(filtroBloqueFila, "select", null,
     ESTILO_CONTROL + "flex:1;min-width:180px;");
+  const listaTitulo = crear(controles, "label", "Ir a un poste o apertura:",
+    "display:block;font-size:11px;font-weight:bold;margin:7px 0 3px;");
   const lista = crear(controles, "select", null,
-    ESTILO_CONTROL + "display:block;width:100%;margin:5px 0 8px 0;");
-  lista.setAttribute("aria-label", "Ir a un punto");
+    ESTILO_CONTROL + "display:block;width:100%;margin:0 0 8px 0;");
+  lista.setAttribute("aria-label", "Ir a un poste o apertura");
+  listaTitulo.htmlFor = "centrality-v91-lista-puntos";
+  lista.id = "centrality-v91-lista-puntos";
 
   const resumen = crear(controles, "div", "",
     "font-size:12px;margin:7px 0;line-height:1.6;");
@@ -513,12 +517,11 @@
       (p.get("aperturasIds") || []).includes(aperturaId));
   }
   function colorDePunto(f) {
+    // Invariante cartográfica: supervisor = color de poste, zona = agrupación.
+    // Los colores históricos de zona y colorPersonalizado siguen en el JSON,
+    // pero nunca deben sustituir el color del supervisor en el marcador.
     if (f?.get?.("tipo") === "APERTURA") return COLOR_APERTURAS;
-    const propio = f?.get?.("colorPersonalizado");
-    if (colorSeguro(propio)) return propio;
-    const bloque = String(f?.get?.("bloqueId") || "");
-    const colorDeZona = coloresBloques.get(bloque);
-    return colorSeguro(colorDeZona) ? colorDeZona : (COLORES[categoriaSupervisor(f)] || COLORES[SIN_BLOQUE]);
+    return COLORES[categoriaSupervisor(f)] || COLORES[SIN_BLOQUE];
   }
   function categoriaSupervisor(f) {
     const b = f?.get?.("bloque");
@@ -639,14 +642,17 @@
   function reconstruirLista() {
     const actual = lista.value;
     lista.replaceChildren();
-    const inicial = crear(lista, "option", "Ir a un punto...");
+    const visibles = puntosFiltrados();
+    const inicial = crear(lista, "option",
+      visibles.length ? `Elegir entre ${visibles.length} registros...` : "Sin resultados para los filtros");
     inicial.value = "";
-    puntos.forEach((f, i) => {
-      if (!puntoVisibleEnMapa(f)) return;
+    for (const f of visibles) {
+      const i = puntos.indexOf(f);
       const marca = f.get("tipo") === "APERTURA" ? "✕ " : "";
       const opt = crear(lista, "option", `${marca}${f.get("numero")} · ${puntoCodigo(f)}`);
       opt.value = String(i);
-    });
+    }
+    lista.disabled = visibles.length === 0;
     lista.value = [...lista.options].some(o => o.value === actual) ? actual : "";
   }
 
@@ -1043,7 +1049,10 @@
   asignarBloque.addEventListener("click", () => asociarSeleccionados(false));
   desasignarBloque.addEventListener("click", () => asociarSeleccionados(true));
   archivo.addEventListener("change", () => cargar(archivo.files?.[0]));
-  busqueda.addEventListener("input", dibujarTabla);
+  busqueda.addEventListener("input", () => {
+    reconstruirLista();
+    dibujarTabla();
+  });
   function cambiarVisibilidad() {
     for (const i of [...seleccionado]) {
       if (!puntoVisibleEnMapa(puntos[i])) seleccionado.delete(i);
@@ -1840,7 +1849,7 @@
 
   // V9: visualizador compacto. La planilla contiene la gestión; el atlas no se ofrece
   // mientras no esté validado. Mantenerlo en código permite recuperar V8 sin pérdida.
-  tituloTexto.textContent = "Centrality · Mapa";
+  tituloTexto.textContent = "Centrality · Mapa V9.1";
   panel.style.width = "340px";
   panel.style.padding = "10px";
   panel.style.maxHeight = "min(85vh,750px)";
@@ -1852,8 +1861,11 @@
   const cerrarRapido=btn(titulo,"×","padding:4px 7px;font-size:15px;");
   cerrarRapido.title="Cerrar Centrality Local sin cerrar GNAT";
   cerrarRapido.onclick=()=>cerrar.click();
-  controles.insertBefore(detailRow,lista);
-  controles.insertBefore(detailStatus,lista);
+  // La lista de navegación vuelve a quedar a la vista inmediatamente bajo el buscador.
+  controles.insertBefore(listaTitulo,barraFiltros);
+  controles.insertBefore(lista,barraFiltros);
+  controles.insertBefore(detailRow,resumen);
+  controles.insertBefore(detailStatus,resumen);
   detailRow.style.margin="6px 0 0";
   detailStatus.style.margin="0 0 4px";
   // Mantener búsqueda, filtros de zonas y navegación a la vista.
@@ -1935,11 +1947,11 @@
     PUNTO: [
       ["numero", "N°", "number"], ["codigo", "Código de poste", "text"],
       ["longitud", "Longitud", "decimal"], ["latitud", "Latitud", "decimal"],
-      ["supervisorColor", "Categoría", "select"], ["bloqueId", "Zona", "text"],
-      ["aperturasIds", "Aperturas asociadas", "text"], ["colorPersonalizado", "Color propio", "optionalColor"]
+      ["supervisorColor", "Color / supervisor", "select"], ["bloqueId", "Zona", "text"],
+      ["aperturasIds", "Aperturas asociadas", "text"]
     ],
     BLOQUE: [["id", "Código de zona", "readonly"], ["nombre", "Nombre de la zona", "text"],
-      ["responsable", "Supervisor / responsable", "text"], ["color", "Color de zona", "color"]]
+      ["responsable", "Supervisor / responsable", "text"], ["color", "Color de zona (solo referencia)", "color"]]
   };
   const e = (tag, parent, textValue, className) => {
     const x=editorDocumento.createElement(tag);

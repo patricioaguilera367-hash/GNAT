@@ -1,11 +1,11 @@
-// Launcher de Centrality V9: requiere un clic del usuario en la pestaña activa.
+// Launcher de Centrality V9.1: requiere un clic del usuario en la pestaña activa.
 // No usa depuración remota, no obtiene cookies y no solicita permisos globales.
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   try {
     const [inspection] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      world: "MAIN", // V9 necesita acceder a webMap_ y OpenLayers del sitio.
+      world: "MAIN", // V9.1 necesita acceder a webMap_ y OpenLayers del sitio.
       func: () => {
         const iframe = document.querySelector("iframe#content");
         if (!iframe) {
@@ -28,7 +28,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
     const state = inspection?.result;
     if (state?.status === "running") {
-      // Evitar inyectar V9 nuevamente y perder ediciones pendientes.
+      // Evitar inyectar V9.1 nuevamente y perder ediciones pendientes.
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         world: "MAIN",
@@ -59,6 +59,6 @@ chrome.action.onClicked.addListener(async (tab) => {
     try {
       await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: "#b42318" });
       await chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
-    } catch (_) { /* cerrar sin impedir uso manual de V9 */ }
+    } catch (_) { /* cerrar sin impedir uso manual de V9.1 */ }
   }
 });

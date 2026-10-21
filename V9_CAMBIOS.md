@@ -17,3 +17,13 @@
 - El atlas/PDF no está validado; no expuesto.
 - Esta versión no es un sistema de determinación de maniobras; las asociaciones son manuales.
 - Probada sobre un mapa simulado con Playwright; falta prueba end-to-end en GNAT autenticado.
+
+## V9.1 — Corrección de colores y navegación
+
+- Postes siempre coloreados según el grupo de supervisor, incluso en zonas D1/D2 de distintos colores.
+- Zona/color individual histórico permanece como dato JSON, pero no modifica el marcador del poste.
+- Aperturas mantienen X rojas.
+- Selector de puntos visible bajo el buscador y filtrado por consulta, zona y supervisor.
+- Editor elimina la columna confusa de color propio y aclara que el color de zona es de referencia.
+- V9 sigue en GNAT_Extension_V9; V8 original en GNAT_Extension no se modifica.
+- Verificación: 7 pruebas offline y smoke Chromium simulado (sin GNAT real).
