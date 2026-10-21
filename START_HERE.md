@@ -4,9 +4,15 @@
 
 The user needs a portable, technically detailed baseline to continue GNAT/Centrality coding with ChatGPT or Gemini without this chat or browser tooling. The larger project concerns a Windows Local map/work-point workflow, exact asset-code consultation/geolocation, technical fiches and eventually trustworthy network/sector analysis. This delivery preserves the knowledge needed to resume; it does not implement future integration.
 
+## Current implementation baseline
+
+The user identifies `GNAT_Extension/` as the version currently used. Its manifest is V8 **8.0.0**. All future requested implementation starts there and reuses existing working behaviors. Do not restart from V6 or the separate Python MOCK app unless a migration is explicitly requested. See [current provenance and installation](CURRENT_BASELINE.md).
+
+For a chat-only coding session, upload [current source addendum](GNAT_CURRENT_CHAT_CONTEXT.md) **together with** [historical full research](GNAT_V6_CHAT_CONTEXT.md). The latter's old V6-first instructions are historical and superseded by this baseline selection; its preserved research is still useful.
+
 ## First reading order
 
-1. [V6 provenance](V6_PROVENANCE.md): identify exact base before editing.
+1. [Current baseline](CURRENT_BASELINE.md): identify the V8 source; [V6 provenance](V6_PROVENANCE.md) describes a historical snapshot only.
 2. [State and gaps](STATE_AND_GAPS.md): distinguish working code, bounded evidence and proposals.
 3. Current ledger: [EVIDENCIA_CONFIRMADA](snapshot/gnat-research/EVIDENCIA_CONFIRMADA.md), [CONTRATOS](snapshot/gnat-research/CONTRATOS.md), [COBERTURA](snapshot/gnat-research/COBERTURA.md), [PENDIENTES](snapshot/gnat-research/PENDIENTES.md).
 4. [Recovered sector observations](RECOVERED_SECTOR_OBSERVATIONS.md): later findings absent from those original files; no raw response export available.

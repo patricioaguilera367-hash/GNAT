@@ -4,7 +4,7 @@
 
 | Area | Actual state |
 | --- | --- |
-| Browser base | Existing user-designated `v6.txt`, host-dependent console code; not executed for delivery. |
+| Browser base | Current `GNAT_Extension/`, V8 8.0.0, reported by user as their working version. Imported unchanged; offline checks only, no live GNAT/browser E2E. V6 is historical. |
 | Independent Local app | Existing Windows/Python/SQLite/web prototype; GNAT disconnected, explicit MOCK only. |
 | Search/geometry/fiches research | Bounded successful real samples and UI/client contracts, not production adapter. |
 | Standalone inspector | Offline verified; one discovery failure, zero records; no live attachment/clean-stop proof. |
@@ -18,6 +18,8 @@
 4. Later bounded MCP research confirmed Point and one MT LineString wrappers, a two-ID FeatureCollection, definition/widget/parts/external-ID responses, sample CRS-consumer behavior. Current ledger records sequence; old reports remain preserved.
 5. Interrupted sector investigation added inert electrical-response headings/client candidates, not graph rows or valid state data. See [recovered observations](RECOVERED_SECTOR_OBSERVATIONS.md).
 6. This handoff copies safe actual corpus and supplements available conversation context. Integration source was not changed.
+
+7. User identifies the four-file Chrome extension as the practical latest version. It is now the implementation baseline; the earlier V6 corpus remains intact for research/reference. JSON source accepts versions 1/2/3 and exports version 3. Stable marker IDs, blocks and `aperturasIds` are local planning associations, not a verified electrical graph.
 
 ## Confirmed sample facts
 
@@ -50,4 +52,4 @@ Electrical sector/isolation needs node/terminal/edge relations, compatible phase
 
 ## Delivery and evidence gaps
 
-Full raw conversation, original raw responses, portal/configuration, credentials/private captures and field datasets are absent intentionally or unavailable. No receipt, commit, PR or publication claimed. Prior native assessment was high/unassessable; selectorless preflight failed access denied before mutation. This handoff does not repair/bypass that lifecycle.
+Full raw conversation, original raw responses, portal/configuration, credentials/private captures and field datasets are absent intentionally or unavailable. Historical V6 validation and lifecycle notes are snapshots, not current delivery status. Current V8 publication checks and exclusions are in CURRENT_BASELINE.md. Git publication does not imply native review approval, GNAT browser E2E or independent-source authentication.

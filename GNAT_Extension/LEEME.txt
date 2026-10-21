@@ -1,0 +1,44 @@
+CENTRALITY LOCAL V8 - EXTENSION DE CHROME
+======================================
+
+INSTALAR UNA SOLA VEZ EN CADA PC
+1. Descomprime centrality_local_v8_extension.zip en una carpeta permanente.
+2. Abre Chrome y visita chrome://extensions
+3. Activa 'Modo de desarrollador'.
+4. Pulsa 'Cargar descomprimida' y elige la CARPETA descomprimida.
+5. Pulsa el icono de pieza de rompecabezas y fija Centrality Local V8 en la barra.
+
+USAR
+1. Abre GNAT e inicia sesión como siempre.
+2. Entra al módulo Mapas y espera que cargue.
+3. Pulsa el icono Centrality Local V8.
+4. En el panel, pulsa 'Abrir planilla' para editar aperturas y recorrido.
+5. Para guardar tu trabajo, exporta el JSON del proyecto.
+
+Al volver a pulsar el icono, si V8 ya está activa, intenta abrir su planilla sin
+reiniciar el panel. Si Chrome bloquea esa ventana, pulsa el botón 'Abrir planilla'
+directamente en el panel V8.
+
+ATENCION
+- No usa .BAT, consola, depuración remota ni permisos de todos los sitios.
+- La extensión ejecuta el MISMO JavaScript V8 adjunto, sin modificar su lógica.
+- Solo actúa al pulsar su icono en una pestaña. Verifica que exista iframe#content
+  con el mapa OpenLayers antes de inyectar V8.
+- Las ediciones son locales a la aplicación; no cambia registros de GNAT.
+- Exporta el proyecto JSON antes de cerrar o recargar GNAT.
+- Una extensión cargada manualmente no se actualiza sola en los PCs del equipo:
+  habrá que distribuir nuevos archivos y pulsar 'Actualizar' en chrome://extensions.
+- Chrome de la empresa puede impedir habilitar modo desarrollador o extensiones
+  no aprobadas. En ese caso, pide instalación mediante TI o distribución corporativa.
+- Evita compartir junto a la extensión los datos privados de proyectos y CSV.
+
+DIAGNOSTICO
+- Si no aparece el mapa, verifica que GNAT esté abierto en el módulo Mapas.
+- Si Chrome indica permisos denegados o la política corporativa bloquea extensiones,
+  contacta a TI.
+- Si aparece ! en el icono, hubo un error de inyección: abre
+  chrome://extensions y revisa 'service worker' en la ficha de la extensión.
+
+ALCANCE DE VALIDACION
+El paquete tiene archivos válidos y el script fuente es idéntico al V8 recibido.
+Todavía no se ha realizado una prueba de extremo a extremo dentro de GNAT real.

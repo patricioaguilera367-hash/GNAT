@@ -1,10 +1,22 @@
 # Code and knowledge map
 
-Use `snapshot/` as the original project root so imports, tests and document links retain original relationships. This locator map does not mean every documented design is implemented.
+**Current implementation root: `GNAT_Extension/`.** Reuse it for future requested features.
+
+| Current path | Role |
+| --- | --- |
+| `GNAT_Extension/manifest.json` | MV3 V8 8.0.0, `activeTab` and `scripting`, action and worker. |
+| `GNAT_Extension/background.js` | User-click launcher; checks same-origin host map, injects MAIN-world V8 or reopens an existing editor. |
+| `GNAT_Extension/centrality_v8.js` | Current map panel, local work points, blocks, linked opening IDs, CSV/project interchange, sheet editor and atlas/PDF. Host-dependent, not standalone. |
+| `GNAT_Extension/LEEME.txt` | Preserved original Spanish installation/usage instructions. |
+| `tests/extension-publication.test.cjs` | Offline source identity/manifest/syntax and CSV helper checks only. |
+
+## Historical reference map
+
+Use `snapshot/` only as the original historical project root when running its existing tests; its imports and document links retain original relationships. This locator map does not mean every documented design is implemented.
 
 | Path under snapshot | Role and boundary |
 | --- | --- |
-| `v6.txt` | User-designated host-dependent V6 base, unchanged. |
+| `v6.txt` | Historical user-designated host-dependent V6 base, unchanged; superseded as active base by V8. |
 | `v4.js`, `v4.test.js` | Historical V4 and its CSV tests, NOT V6 coverage. |
 | `legacy/Global_V4_1_referencia.js`, `legacy/Buscador_V2_referencia.txt` | Earlier references, not automatically active base. |
 | `INICIAR.bat`, `iniciar.py` | Existing Windows/Python launcher; see original README. |
@@ -30,4 +42,4 @@ Keep adapter/authentication separate from geometry rendering, user work-point id
 
 ## Without tools
 
-[Single-file context](GNAT_V6_CHAT_CONTEXT.md) has a unique anchored full appendix for every manifest entry and every new explanatory guide. Index records original path and SHA256. No code is replaced by ellipses. Manifest defines actual inclusion, not forecast counts.
+[Current source context](GNAT_CURRENT_CHAT_CONTEXT.md) supplies V8; the historical [research context](GNAT_V6_CHAT_CONTEXT.md) has a unique anchored full appendix for every manifest entry and every new explanatory guide. Index records original path and SHA256. No code is replaced by ellipses. Manifest defines actual inclusion, not forecast counts.

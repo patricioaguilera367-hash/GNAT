@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Centrality Local V8",
+  "version": "8.0.0",
+  "description": "Abre Centrality Local V8 en el mapa GNAT actual sin utilizar DevTools.",
+  "action": {
+    "default_title": "Abrir Centrality Local V8"
+  },
+  "permissions": ["activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
