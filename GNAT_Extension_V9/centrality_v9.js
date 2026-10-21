@@ -1,5 +1,5 @@
 /*
- * CENTRALITY V9.2 - V9.1 + EDITOR EXCEL AVANZADO
+ * CENTRALITY V9.3 - V9.2 + AUTOSAVE Y MÓDULOS VANILLA JS
  * Ejecutar en la consola del navegador con el mapa de Centrality abierto.
  * Lee archivos locales. No envia archivos ni cambia datos de Centrality.
  * Los colores y filtros se guardan en el proyecto JSON; CSV solo guarda las categorias.
@@ -129,7 +129,8 @@
     if (typeof document === "undefined") return;
   }
 
-  const frame = document.querySelector("iframe#content");
+  const frame = window.__centralityMapBridge?.resolveHost(document)?.frame
+    || document.querySelector("iframe#content");
   if (!frame) {
     console.error("Abre primero el modulo Mapas de Centrality.");
     return;
@@ -472,6 +473,19 @@
   const botonesProyecto = fila(panel, "margin-top:7px;");
   const guardarProyectoBtn = btn(botonesProyecto, "Guardar proyecto JSON", "flex:1;");
   const abrirProyectoBtn = btn(botonesProyecto, "Abrir proyecto JSON", "flex:1;");
+  const filaAutosave = fila(panel, "margin:5px 0 0;gap:4px;");
+  const recuperarAutoBtn = btn(filaAutosave, 'Recuperar autosave',
+    'flex:0 0 auto;font-size:11px;padding:4px 7px;');
+  recuperarAutoBtn.disabled = true;
+  recuperarAutoBtn.title = 'Cargar un respaldo guardado en este navegador; no se recupera automáticamente.';
+  const estadoAutosave = crear(filaAutosave, 'span', 'Verificando respaldo local…',
+    'font-size:10px;color:#59677a;flex:1;min-width:100px;');
+  let respaldoDisponible = null;
+  let autosave = null;
+  function estadoAutosaveTexto(text, error = false) {
+    estadoAutosave.textContent = text;
+    estadoAutosave.style.color = error ? '#b42318' : '#59677a';
+  }
   const archivoProyecto = crear(panel, "input", null, "display:none;");
   archivoProyecto.type = "file";
   archivoProyecto.accept = ".json,application/json";
@@ -1159,23 +1173,27 @@
     a.remove();
     w.setTimeout(() => w.URL.revokeObjectURL(url), 2000);
   }
-  guardarProyectoBtn.addEventListener("click", () => {
-    if (!ol.proj?.toLonLat) return mensaje("Conversión de coordenadas no disponible.", true);
-    const registros = puntos.map(f => {
-      const [longitud,latitud] = ol.proj.toLonLat(f.getGeometry().getCoordinates(), map.getView().getProjection());
-      return {id:String(f.get('id')),numero:Number(f.get('numero')),tipo:f.get('tipo')||'PUNTO',
-        codigo:String(f.get('codigo')||''),longitud,latitud,supervisorColor:f.get('bloque')||SIN_BLOQUE,
-        bloqueId:String(f.get('bloqueId')||''),bloques:bloquesDe(f),aperturasIds:f.get('aperturasIds')||[],
-        colorPersonalizado:String(f.get('colorPersonalizado')||''),tipoEquipo:String(f.get('tipoEquipo')||''),
-        supervisorNombre:String(f.get('supervisorNombre')||''),fechaPlanificacion:String(f.get('fechaPlanificacion')||'')};
+  function construirProyectoActual() {
+    if (!ol.proj?.toLonLat) throw Error('Conversión de coordenadas no disponible.');
+    return window.__centralityProjectState.buildProject({
+      features: puntos,
+      toLonLat: (coords, projection) => ol.proj.toLonLat(coords, projection),
+      projection: map.getView().getProjection(),
+      zoneEntries: definicionesBloques, zoneColors: coloresBloques,
+      zoneSupervisors: responsablesBloques,
+      fallbackColor: colorBloqueDefault,
+      supervisorColors: COLORES, visibleSupervisors: visiblesSupervisores,
+      excelDraft: excelBorrador
     });
-    const proyecto = {version:4,formato:'CentralityLocal',
-      bloques:[...definicionesBloques].map(([id,nombre],i)=>({id,nombre,
-        color:coloresBloques.get(id)||colorBloqueDefault(i),responsable:responsablesBloques.get(id)||''})),
-      coloresSupervisores:{...COLORES},visiblesSupervisores:[...visiblesSupervisores],registros,
-      ...(excelBorrador?{excelBorrador}:{} )};
-    descargarTexto('centrality-proyecto.json',JSON.stringify(proyecto,null,2), 'application/json;charset=utf-8');
-    mensaje(`Proyecto guardado: ${registros.length} registros y ${proyecto.bloques.length} bloques.`);
+  }
+  guardarProyectoBtn.addEventListener('click', () => {
+    try {
+      excelAvanzado?.capturar?.();
+      const proyecto = construirProyectoActual();
+      descargarTexto('centrality-proyecto.json', JSON.stringify(proyecto, null, 2),
+        'application/json;charset=utf-8');
+      mensaje(`Proyecto guardado: ${proyecto.registros.length} registros y ${proyecto.bloques.length} bloques.`);
+    } catch (e) { mensaje('No se pudo guardar el proyecto: ' + e.message, true); }
   });
   abrirProyectoBtn.addEventListener("click", () => archivoProyecto.click());
   archivoProyecto.addEventListener("change", async () => {
@@ -1282,6 +1300,23 @@
       mensaje(`Proyecto abierto: ${features.length} registros, ${definicionesBloques.size} bloques.`);
     } catch(e) { mensaje("Error al abrir proyecto: " + e.message,true); }
     finally { archivoProyecto.value=''; }
+  });
+
+  recuperarAutoBtn.addEventListener('click', async () => {
+    if (!respaldoDisponible?.project) return;
+    const n = respaldoDisponible.project.registros.length;
+    const fecha = new Date(respaldoDisponible.timestamp).toLocaleString('es-CL');
+    const ok = window.confirm(`¿Recuperar el respaldo local del ${fecha} con ${n} registros?\n\n` +
+      'Reemplazará los datos actualmente visibles. Guarda antes tu JSON si los necesitas.');
+    if (!ok) return;
+    try {
+      const data = JSON.stringify(respaldoDisponible.project);
+      const file = new File([data], 'centrality-autosave.json', {type:'application/json'});
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      archivoProyecto.files = transfer.files;
+      archivoProyecto.dispatchEvent(new Event('change', {bubbles:true}));
+    } catch (e) { estadoAutosaveTexto('No se pudo restaurar: ' + e.message, true); }
   });
 
   // ========================================================================
@@ -1935,6 +1970,7 @@
     // La inicialización del módulo PDF registra su función de cierre aquí.
     try { cerrarAtlas?.(); } catch (e) { console.warn(e); }
     try { cambiarDetalle(0); } catch (e) { console.warn(e); }
+    void autosave?.save().finally(() => autosave?.destroy());
     retirarCapa();
     panel.remove();
     if (w.__superponerKMZ?.cerrar === cerrarPanel) delete w.__superponerKMZ;
@@ -3247,11 +3283,7 @@
     ev.preventDefault();
     salirModoEdicionCelda();
 
-    const matrix = clip
-      .replace(/\r\n?/g, "\n")
-      .replace(/\n$/, "")
-      .split("\n")
-      .map(line => line.split("\t").map(c => c.trim()));
+    const matrix = window.__centralityGridEngine.parseClipboardMatrix(clip);
 
     const { minR, maxR, minC, maxC } = rangoNormalizado();
     const selH = maxR - minR + 1;
@@ -3889,7 +3921,8 @@
   return {
     abrir:abrirEditorExcel,
     abierta:()=>Boolean(editorVentana&&!editorVentana.closed),
-    cerrar:()=>{if(editorVentana&&!editorVentana.closed){guardarBorradorExcel();editorVentana.close();}}
+    cerrar:()=>{if(editorVentana&&!editorVentana.closed){guardarBorradorExcel();editorVentana.close();}},
+    capturar:()=>{if(editorVentana&&!editorVentana.closed)guardarBorradorExcel();}
   };
   }
 
@@ -3939,6 +3972,26 @@
   } else {
     retirarCapa();
     actualizarControlesBloques();
-    console.log('Centrality V9 listo: abre la planilla o un proyecto JSON.');
+    console.log('Centrality V9.3 listo: abre la planilla o un proyecto JSON.');
   }
+  // Automatic local recovery is separate from the manual JSON export.
+  // MAIN-world script cannot access chrome.storage.local; the ISOLATED bridge owns it.
+  autosave = window.__centralityAutosave.createAutosave({
+    win: window, build: construirProyectoActual,
+    captureDraft: () => excelAvanzado.capturar(),
+    onStatus: (text, error) => estadoAutosaveTexto(text, error),
+    onSaved: envelope => {
+      respaldoDisponible = envelope;
+      recuperarAutoBtn.disabled = false;
+    }
+  });
+  void autosave.read().then(snapshot => {
+    if (!abierto) return;
+    respaldoDisponible = snapshot;
+    recuperarAutoBtn.disabled = !snapshot;
+    estadoAutosaveTexto(snapshot
+      ? 'Respaldo disponible: ' + new Date(snapshot.timestamp).toLocaleString('es-CL')
+      : 'Autosave activo · sin respaldo previo');
+  }).catch(err => estadoAutosaveTexto('Autosave no disponible: ' + err.message, true));
+
 })();

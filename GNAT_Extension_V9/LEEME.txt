@@ -1,12 +1,23 @@
-CENTRALITY LOCAL V9.2 — CONSOLIDACIÓN
+CENTRALITY LOCAL V9.3 (Manifest V3)
 
-Contiene V9.1 con el editor Excel mejorado (Recorrido / Ingreso masivo / Aperturas).
-La ventana "Zonas" conserva el gestor original de zonas, responsables, colores y tipo de apertura.
-En la ventana "Excel" se pueden editar celdas, copiar/pegar rangos y usar el ingreso masivo.
+Instalación:
+  1. Mantén la carpeta GNAT_Extension_V9 junto a src/ dentro del clon Git.
+  2. chrome://extensions → Modo desarrollador → Cargar descomprimida.
+  3. Inicia sesión normalmente en GNAT, abre Mapas y pulsa Centrality Local.
 
-El archivo JSON es el formato de guardado. CSV solo es exportación.
-Puntos de igual categoría de supervisor mantienen el color común; aperturas son X rojas.
-El panel mantiene buscador, lista y botones de detalle MT/BT.
+Uso:
+  - Excel ↗ es la planilla avanzada; Zonas ↗ administra zonas, equipos y responsables.
+  - Los colores de postes dependen del supervisor; aperturas siempre X rojas.
+  - Mantén tus archivos JSON individuales como respaldo principal.
+  - Chrome guarda una copia automática local solo después de cambios, aprox. cada 8 s.
+  - El botón Recuperar autosave permite inspeccionar la fecha y confirmar restauración.
+  - La extensión no extrae automáticamente coordenadas desde el servidor GNAT.
 
-Verificación realizada en Chromium simulado; falta verificar en GNAT real.
-No utilizar las asociaciones de planificación como prueba de aislamiento eléctrico.
+Seguridad y alcance:
+  - Autosave local al perfil Chrome, no sincroniza con otros PC.
+  - No guardes JSON reales en el repositorio público.
+  - El respaldo local es la última copia, no historial por proyecto.
+  - El ploteo/atlas continúa oculto por falta de validación operativa.
+  - Ninguna asociación de aperturas equivale a prueba de aislamiento.
+
+Arquitectura/documentación: V9_3_PERSISTENCIA_MODULOS.md en el repositorio.
