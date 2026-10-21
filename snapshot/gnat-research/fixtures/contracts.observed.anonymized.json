@@ -1,0 +1,195 @@
+{
+  "provenance": {
+    "class": "transformed_observed_response",
+    "source": "Parent Chrome DevTools MCP observations, 2026-10-21; not standalone observer output",
+    "requests": {
+      "point": 3999,
+      "batch": 4111,
+      "line": 4117,
+      "definition": 4021,
+      "widgetContent": 4048,
+      "parts": 4049,
+      "externalIds": 4110
+    },
+    "transformation": "IDs consistently remapped by domain; all geometry coordinates and bboxes uniformly translated and rounded; labels replaced; dates and organization names anonymized. Coordinates are not original geographic locations; relative spatial offsets remain.",
+    "subsets": [
+      "definition keeps title placeholder and one known read-only tab; message_error value, other sections and nested config metadata omitted because not collected",
+      "widgetContent keeps only three observed entries, in their relative returned order; nonempty arrays omitted because row schema was not collected",
+      "externalIds keeps one observed business-ID row only; other rows omitted"
+    ],
+    "scope": "Successful samples only. No fabricated error, capacity, topology or independent access evidence. Transformation is not a live response or precision guarantee."
+  },
+  "point": {
+    "success": true,
+    "data": {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -10.915995049,
+          -18.932875695
+        ]
+      },
+      "id": 1001,
+      "properties": {
+        "display_name": "POLE_A"
+      },
+      "bbox": [
+        -10.91599504933466,
+        -18.93287569521334,
+        -10.91599504933466,
+        -18.93287569521334
+      ]
+    }
+  },
+  "batch": {
+    "success": true,
+    "data": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -10,
+              -20
+            ]
+          },
+          "id": 1002,
+          "properties": {
+            "display_name": "POLE_B"
+          },
+          "bbox": [
+            -10,
+            -20,
+            -10,
+            -20
+          ]
+        },
+        {
+          "type": "Feature",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -9.999965762,
+              -20.000055628
+            ]
+          },
+          "id": 1003,
+          "properties": {
+            "display_name": "POLE_B [POLE_B]"
+          },
+          "bbox": [
+            -9.999965762,
+            -20.000055628,
+            -9.999965762,
+            -20.000055628
+          ]
+        }
+      ]
+    }
+  },
+  "line": {
+    "success": true,
+    "data": {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -9.999931577,
+            -20.000079709
+          ],
+          [
+            -9.999151261,
+            -20.000611599
+          ]
+        ]
+      },
+      "id": 1004,
+      "properties": {
+        "display_name": "POLE_B - POLE_C"
+      },
+      "bbox": [
+        -9.99993157713391,
+        -20.000627893686445,
+        -9.99915126052621,
+        -20.00006341370066
+      ]
+    }
+  },
+  "definition": {
+    "success": true,
+    "data": {
+      "title": "[TITLE REDACTED]",
+      "widget_definition": {
+        "tab_widgets": [
+          {
+            "id": 5,
+            "title": "IDs",
+            "exposition": "read-only",
+            "component_class": "Acs.ExternalIdGrid",
+            "component_has_content_generator": false
+          }
+        ]
+      }
+    }
+  },
+  "widgetContent": {
+    "success": true,
+    "data": [
+      {
+        "widget_id": 2,
+        "content": "[HTML REDACTED]"
+      },
+      {
+        "widget_id": 42,
+        "content": []
+      },
+      {
+        "widget_id": 7,
+        "content": null
+      }
+    ]
+  },
+  "parts": {
+    "data": [
+      {
+        "id": 2001,
+        "name": "2001",
+        "class": "elec_insulator",
+        "class_display": "Structure",
+        "type_display": "Low-voltage node",
+        "managed_by": "ORG_A",
+        "managed_by_id": 3001,
+        "installed_assets": 0
+      },
+      {
+        "id": 2002,
+        "name": "2002",
+        "class": "elec_insulator",
+        "class_display": "Structure",
+        "type_display": "Low-voltage structure node",
+        "managed_by": "ORG_A",
+        "managed_by_id": 3001,
+        "installed_assets": 1
+      }
+    ],
+    "total": 2
+  },
+  "externalIds": {
+    "success": true,
+    "data": [
+      {
+        "entity_id": 4001,
+        "entity_name": "Equipment code",
+        "external_id": "POLE_B",
+        "is_business_id": true,
+        "begin_date": "2000-01-01T00:00:00.000Z",
+        "read_only": false,
+        "has_generator": false
+      }
+    ]
+  }
+}

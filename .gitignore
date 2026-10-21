@@ -1,0 +1,12 @@
+# Protect runtime data without hiding preserved source.
+!snapshot/v6.txt
+!snapshot/v4.js
+!snapshot/examples/*.csv
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/node_modules/
+snapshot/datos/*
+!snapshot/datos/.keep
+snapshot/gnat-research/private/
+*.log

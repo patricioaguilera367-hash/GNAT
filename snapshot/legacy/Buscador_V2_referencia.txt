@@ -1,0 +1,712 @@
+/*
+ * CENTRALITY - PUNTOS KMZ/KML POR BLOQUES (VERDE / NARANJO / AZUL)
+ * Ejecutar en la consola del navegador con el mapa de Centrality abierto.
+ * Lee archivos locales. No envia archivos ni cambia datos de Centrality.
+ * Los colores son temporales; puedes exportar/importar el reparto como CSV.
+ */
+(() => {
+  "use strict";
+
+  const frame = document.querySelector("iframe#content");
+  if (!frame) {
+    console.error("Abre primero el modulo Mapas de Centrality.");
+    return;
+  }
+
+  let w, map, ol, doc;
+  try {
+    w = frame.contentWindow;
+    map = w.webMap_?.map;
+    ol = w.ol;
+    doc = w.document;
+  } catch (e) {
+    console.error("No es posible acceder al mapa de Centrality:", e);
+    return;
+  }
+
+  if (!map || !ol?.layer?.Vector || !ol?.source?.Vector ||
+      !ol?.format?.KML || !ol?.Feature || !ol?.geom?.Point ||
+      !ol?.style?.Style || !ol?.style?.Circle ||
+      !ol?.style?.Text || !ol?.style?.Fill || !ol?.style?.Stroke) {
+    console.error("El mapa no expone los componentes necesarios de OpenLayers.");
+    return;
+  }
+
+  try { w.__superponerKMZ?.cerrar?.(); } catch (e) {
+    console.warn("No se pudo retirar el panel anterior:", e);
+  }
+
+  const COLORES = Object.freeze({
+    Verde: "#198754",
+    Naranjo: "#ef8b16",
+    Azul: "#2469d8"
+  });
+  const BLOQUES = Object.keys(COLORES);
+  let puntos = [];
+  let capa = null;
+  let seleccionado = new Set();
+  let enfocado = -1;
+  let etiquetas = "cerca";
+  let cargaId = 0;
+  let abierto = true;
+  let nombreArchivo = "puntos";
+  let textoAviso = "";
+  const cacheEstilos = new WeakMap();
+
+  // Una sola interfaz, dentro del iframe que contiene el mapa.
+  const panel = doc.createElement("div");
+  panel.style.cssText = [
+    "position:fixed", "top:12px", "right:12px",
+    "z-index:2147483647", "width:450px",
+    "max-width:calc(100vw - 24px)", "max-height:calc(100vh - 24px)",
+    "overflow:auto", "box-sizing:border-box", "padding:14px",
+    "background:#fff", "color:#17212b", "font:13px Arial,sans-serif",
+    "border:1px solid #bdc7d0", "border-radius:10px",
+    "box-shadow:0 7px 30px #0004"
+  ].join(";");
+
+  const crear = (padre, tag, texto, css) => {
+    const el = doc.createElement(tag);
+    if (texto !== undefined && texto !== null) el.textContent = texto;
+    if (css) el.style.cssText = css;
+    padre.appendChild(el);
+    return el;
+  };
+
+  const ESTILO_CONTROL =
+    "font:12px Arial,sans-serif;box-sizing:border-box;border:1px solid #abb6c1;" +
+    "border-radius:5px;padding:7px;background:#fff;color:#17212b;";
+  const ESTILO_BOTON = ESTILO_CONTROL + "cursor:pointer;background:#f5f7fa;";
+  const btn = (padre, titulo, cssExtra = "") => {
+    const el = crear(padre, "button", titulo, ESTILO_BOTON + cssExtra);
+    el.type = "button";
+    return el;
+  };
+  const fila = (padre, cssExtra = "") =>
+    crear(padre, "div", null, "display:flex;align-items:center;gap:7px;flex-wrap:wrap;" + cssExtra);
+  const titulo = fila(panel, "justify-content:space-between;margin-bottom:8px;");
+  const tituloTexto = crear(titulo, "strong", "Puntos KMZ · Supervisores", "font-size:15px;");
+  const ocultar = btn(titulo, "Contraer", "padding:5px 8px;");
+
+  crear(panel, "div", "Importa tu archivo KMZ o KML:", "margin-bottom:5px;");
+  const archivo = crear(panel, "input", null,
+    "display:block;width:100%;margin:4px 0 7px 0;font-size:12px;");
+  archivo.type = "file";
+  archivo.accept = ".kmz,.kml";
+
+  const estado = crear(panel, "div", "Esperando archivo...",
+    "margin:7px 0;color:#314355;font-size:12px;");
+
+  const controles = crear(panel, "div");
+  const busqueda = crear(controles, "input", null,
+    ESTILO_CONTROL + "display:block;width:100%;margin:8px 0 6px 0;");
+  busqueda.type = "search";
+  busqueda.placeholder = "Buscar N° o código de poste...";
+  busqueda.setAttribute("aria-label", "Buscar punto por numero o codigo");
+  const barraFiltros = fila(controles, "margin:0 0 7px 0;");
+  const bloqueFiltro = crear(barraFiltros, "select", null,
+    ESTILO_CONTROL + "flex:1;min-width:100px;");
+  ["Todos los bloques", ...BLOQUES].forEach((v, i) => {
+    const opt = crear(bloqueFiltro, "option", v);
+    opt.value = i ? v : "";
+  });
+  const modoEtiqueta = crear(barraFiltros, "select", null,
+    ESTILO_CONTROL + "flex:1.5;min-width:160px;");
+  [
+    ["cerca", "Etiquetas al acercar"],
+    ["siempre", "Etiquetas siempre"],
+    ["ninguna", "Ocultar etiquetas"]
+  ].forEach(([v, s]) => {
+    const opt = crear(modoEtiqueta, "option", s);
+    opt.value = v;
+  });
+  modoEtiqueta.title = "Las etiquetas muestran N° + código de poste.";
+
+  const lista = crear(controles, "select", null,
+    ESTILO_CONTROL + "display:block;width:100%;margin:5px 0 8px 0;");
+  lista.setAttribute("aria-label", "Ir a un punto");
+
+  const resumen = crear(controles, "div", "",
+    "font-size:12px;margin:7px 0;line-height:1.6;");
+
+  const agrupacion = crear(controles, "div", null,
+    "background:#f3f6f9;border:1px solid #dbe3ea;border-radius:7px;" +
+    "padding:9px;margin:8px 0;");
+  crear(agrupacion, "strong", "Asignar bloque a los seleccionados",
+    "display:block;font-size:12px;margin-bottom:7px;");
+  const coloresFila = fila(agrupacion);
+  const botonesColores = {};
+  for (const bloque of BLOQUES) {
+    const b = btn(coloresFila, bloque,
+      "background:" + COLORES[bloque] + ";border-color:" + COLORES[bloque] +
+      ";color:white;font-weight:bold;flex:1;min-width:80px;");
+    botonesColores[bloque] = b;
+  }
+  const filaSeleccion = fila(agrupacion, "margin-top:7px;justify-content:space-between;");
+  const nSel = crear(filaSeleccion, "span", "0 seleccionados", "font-size:12px;");
+  const limpiarSel = btn(filaSeleccion, "Deseleccionar", "padding:5px 8px;");
+
+  const tablaWrap = crear(controles, "div", null,
+    "border:1px solid #ccd5df;border-radius:6px;overflow:auto;" +
+    "max-height:min(38vh,350px);background:#fff;");
+  const tabla = crear(tablaWrap, "table", null,
+    "width:100%;border-collapse:collapse;table-layout:fixed;font:12px Arial,sans-serif;");
+  const thead = crear(tabla, "thead");
+  const trh = crear(thead, "tr", null, "background:#eaf0f5;");
+  const th = (texto, ancho) => crear(trh, "th", texto,
+    "position:sticky;top:0;z-index:2;background:#eaf0f5;" +
+    "padding:7px 4px;text-align:left;border-bottom:1px solid #c4cdd8;" +
+    (ancho ? "width:" + ancho + ";" : ""));
+  const celdaCheck = th("", "31px");
+  const checkTodo = crear(celdaCheck, "input");
+  checkTodo.type = "checkbox";
+  checkTodo.title = "Seleccionar todos los puntos visibles en la tabla";
+  th("N°", "36px");
+  th("Código de poste", "auto");
+  th("Bloque", "100px");
+  const tbody = crear(tabla, "tbody");
+  const pieTabla = crear(controles, "div", "",
+    "font-size:11px;color:#566575;margin:5px 0 9px 0;");
+
+  const acciones = fila(panel, "margin-top:10px;");
+  const verTodos = btn(acciones, "Ver todos", "flex:1;");
+  const verSeleccion = btn(acciones, "Ver selección", "flex:1;");
+  const quitar = btn(acciones, "Quitar puntos", "flex:1;");
+  const acciones2 = fila(panel, "margin-top:7px;");
+  const exportar = btn(acciones2, "Guardar reparto CSV", "flex:1;");
+  const importar = btn(acciones2, "Recuperar CSV", "flex:1;");
+  const cerrar = btn(acciones2, "Cerrar", "flex:0.6;");
+  const archivoCSV = crear(panel, "input", null, "display:none;");
+  archivoCSV.type = "file";
+  archivoCSV.accept = ".csv,text/csv";
+  crear(panel, "div", "El reparto se mantiene en esta sesión. Usa CSV para guardarlo.",
+    "font-size:11px;color:#657181;margin-top:8px;");
+  doc.body.appendChild(panel);
+
+  function mensaje(s, error = false) {
+    textoAviso = s;
+    estado.textContent = s;
+    estado.style.color = error ? "#b42318" : "#314355";
+  }
+
+  // Mantener el nombre original para no invalidar los CSV ya guardados.
+  function puntoCodigoOriginal(f) {
+    return String(f.get("codigo") || "Sin código");
+  }
+
+  // Si el KML trae "15 - F51755", no mostrar dos veces la numeración.
+  function puntoCodigo(f) {
+    const codigo = puntoCodigoOriginal(f).trim();
+    const numero = String(f.get("numero"));
+    const prefijo = new RegExp("^" + numero + "(?:\\s*[-–—·.:#/]\\s*|\\s+)");
+    return codigo.replace(prefijo, "").trim() || codigo;
+  }
+
+  function puntosFiltrados() {
+    const q = busqueda.value.trim().toLocaleLowerCase("es");
+    const grupo = bloqueFiltro.value;
+    return puntos.filter(f => {
+      const coincideGrupo = !grupo || f.get("bloque") === grupo;
+      const valor = String(f.get("numero")) + " " + puntoCodigo(f);
+      return coincideGrupo && valor.toLocaleLowerCase("es").includes(q);
+    });
+  }
+
+  function estiloPunto(f, resolution) {
+    const bloque = BLOQUES.includes(f.get("bloque")) ? f.get("bloque") : "Azul";
+    const activo = enfocado === Number(f.get("numero")) - 1;
+    const marcado = seleccionado.has(Number(f.get("numero")) - 1);
+    const conTexto = etiquetas === "siempre" || (etiquetas === "cerca" && resolution < 42);
+    const clave = [bloque, activo, marcado, conTexto].join("|");
+    let cache = cacheEstilos.get(f);
+    if (!cache) {
+      cache = new Map();
+      cacheEstilos.set(f, cache);
+    }
+    if (cache.has(clave)) return cache.get(clave);
+    const estilo = new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: activo ? 10 : (marcado ? 8.5 : 7),
+        fill: new ol.style.Fill({ color: COLORES[bloque] }),
+        stroke: new ol.style.Stroke({
+          color: activo ? "#17212b" : "#ffffff",
+          width: activo ? 3 : marcado ? 3 : 2
+        })
+      }),
+      text: conTexto ? new ol.style.Text({
+        text: f.get("numero") + " · " + puntoCodigo(f),
+        font: "bold 12px Arial,sans-serif",
+        offsetY: activo ? -23 : -20,
+        fill: new ol.style.Fill({color: "#ffffff"}),
+        stroke: new ol.style.Stroke({color: "#142332", width: 3.5})
+      }) : undefined,
+      zIndex: activo ? 100 : marcado ? 50 : 0
+    });
+    cache.set(clave, estilo);
+    return estilo;
+  }
+
+  function redibujarMapa() {
+    if (capa) capa.changed();
+  }
+
+  function mostrarResumen() {
+    const cuentas = Object.fromEntries(BLOQUES.map(b => [b, 0]));
+    puntos.forEach(f => { cuentas[f.get("bloque")]++; });
+    resumen.replaceChildren();
+    crear(resumen, "span", `${puntos.length} puntos  ·  `);
+    BLOQUES.forEach((b, i) => {
+      const dato = crear(resumen, "strong", `${b}: ${cuentas[b]}`,
+        `color:${COLORES[b]};`);
+      if (i < BLOQUES.length - 1) dato.after(doc.createTextNode("  ·  "));
+    });
+    nSel.textContent = seleccionado.size + " seleccionados";
+  }
+
+  function reconstruirLista() {
+    const actual = lista.value;
+    lista.replaceChildren();
+    const inicial = crear(lista, "option", "Ir a un punto...");
+    inicial.value = "";
+    puntos.forEach((f, i) => {
+      const opt = crear(lista, "option", `${f.get("numero")} · ${puntoCodigo(f)}`);
+      opt.value = String(i);
+    });
+    lista.value = (actual !== "" && Number(actual) < puntos.length) ? actual : "";
+  }
+
+  // Reserva un espacio visual a la derecha para que el panel NO tape el poste.
+  function margenDerechoMapa() {
+    const tamano = map.getSize();
+    const mapaEl = map.getTargetElement?.();
+    if (!tamano?.[0] || !mapaEl) return 0;
+    const m = mapaEl.getBoundingClientRect();
+    const p = panel.getBoundingClientRect();
+    const anchoSolapado = Math.max(0,
+      Math.min(m.right, p.right) - Math.max(m.left, p.left));
+    const panelALaDerecha = (p.left + p.right) / 2 > (m.left + m.right) / 2;
+    return panelALaDerecha
+      ? Math.min(anchoSolapado + 16, Math.max(0, tamano[0] - 130))
+      : 0;
+  }
+
+  function navegar(indice) {
+    const f = puntos[indice];
+    if (!f) return;
+    enfocado = indice;
+    lista.value = String(indice);
+    const view = map.getView();
+    const actual = view.getZoom();
+    const zoom = Math.max(Number.isFinite(actual) ? actual : 0, 17.5);
+    const xy = f.getGeometry().getCoordinates();
+    const res = view.getResolutionForZoom?.(zoom);
+    const margen = margenDerechoMapa();
+    const centro = Number.isFinite(res) && margen
+      ? [xy[0] + margen * res / 2, xy[1]]
+      : xy;
+    view.animate({ center: centro, zoom, duration: 350 });
+    redibujarMapa();
+    dibujarTabla();
+  }
+
+  function dibujarTabla() {
+    const visibles = puntosFiltrados();
+    tbody.replaceChildren();
+    for (const f of visibles) {
+      const indice = Number(f.get("numero")) - 1;
+      const grupo = f.get("bloque");
+      const tr = crear(tbody, "tr", null,
+        "cursor:pointer;border-bottom:1px solid #e5e9ee;" +
+        (indice === enfocado ? "background:#e8f0fb;" : "") +
+        `border-left:4px solid ${COLORES[grupo]};`);
+      tr.title = "Ir a este punto en el mapa";
+      const td = (texto, css = "") => crear(tr, "td", texto,
+        "padding:6px 4px;overflow:hidden;text-overflow:ellipsis;" + css);
+      const tCheck = td("");
+      const check = crear(tCheck, "input");
+      check.type = "checkbox";
+      check.checked = seleccionado.has(indice);
+      check.setAttribute("aria-label", `Seleccionar punto ${f.get("numero")}`);
+      check.addEventListener("click", e => e.stopPropagation());
+      check.addEventListener("change", () => {
+        if (check.checked) seleccionado.add(indice);
+        else seleccionado.delete(indice);
+        refrescarSeleccion();
+      });
+      td(String(f.get("numero")), "font-weight:bold;");
+      td(puntoCodigo(f), "font-weight:600;word-break:break-word;");
+      const tBloque = td("");
+      const s = crear(tBloque, "select", null,
+        "font:11px Arial,sans-serif;width:100%;max-width:100%;" +
+        "padding:5px 2px;border:1px solid #c4cdd8;border-radius:4px;");
+      BLOQUES.forEach(b => {
+        const op = crear(s, "option", b);
+        op.value = b;
+      });
+      s.value = grupo;
+      s.style.color = COLORES[grupo];
+      s.style.fontWeight = "bold";
+      s.title = "Cambiar solo este punto de bloque";
+      s.addEventListener("click", e => e.stopPropagation());
+      s.addEventListener("change", () => {
+        asignar([indice], s.value);
+      });
+      tr.addEventListener("click", () => navegar(indice));
+    }
+    const n = visibles.length;
+    pieTabla.textContent = `Mostrando ${n} de ${puntos.length} puntos. ` +
+      "Marca casillas para asignar varios; pulsa una fila para ir al mapa.";
+    const todos = n > 0 && visibles.every(f =>
+      seleccionado.has(Number(f.get("numero")) - 1));
+    const algunos = visibles.some(f => seleccionado.has(Number(f.get("numero")) - 1));
+    checkTodo.checked = todos;
+    checkTodo.indeterminate = algunos && !todos;
+    mostrarResumen();
+  }
+
+  function refrescarSeleccion() {
+    const visibles = puntosFiltrados();
+    checkTodo.checked = visibles.length > 0 && visibles.every(f =>
+      seleccionado.has(Number(f.get("numero")) - 1));
+    checkTodo.indeterminate = !checkTodo.checked && visibles.some(f =>
+      seleccionado.has(Number(f.get("numero")) - 1));
+    nSel.textContent = seleccionado.size + " seleccionados";
+    redibujarMapa();
+  }
+
+  function asignar(indices, bloque) {
+    if (!BLOQUES.includes(bloque)) return;
+    if (!indices.length) {
+      mensaje("Primero selecciona uno o más puntos en la tabla.", true);
+      return;
+    }
+    for (const i of indices) {
+      if (puntos[i]) puntos[i].set("bloque", bloque);
+    }
+    seleccionado.clear();
+    dibujarTabla();
+    redibujarMapa();
+    mensaje(`${indices.length} punto(s) asignado(s) al bloque ${bloque}.`);
+  }
+
+  function retirarCapa() {
+    if (capa) {
+      map.removeLayer(capa);
+      capa = null;
+    }
+    puntos = [];
+    seleccionado.clear();
+    enfocado = -1;
+    busqueda.value = "";
+    bloqueFiltro.value = "";
+    lista.replaceChildren();
+    const op = crear(lista, "option", "Ir a un punto...");
+    op.value = "";
+    dibujarTabla();
+  }
+
+  // Lee el KML contenido en un KMZ (ZIP) sin llamar a servidores.
+  async function leerKMZ(file) {
+    const ab = await file.arrayBuffer();
+    if (ab.byteLength > 30000000) throw Error("KMZ demasiado grande (>30 MB).");
+    const v = new DataView(ab);
+    let end = -1;
+    for (let i = ab.byteLength - 22; i >= Math.max(0, ab.byteLength - 65557); --i) {
+      if (v.getUint32(i, true) === 0x06054b50) { end = i; break; }
+    }
+    if (end < 0) throw Error("No se encontró el índice ZIP.");
+    const total = v.getUint16(end + 10, true);
+    let p = v.getUint32(end + 16, true);
+    const encontrados = [];
+    for (let i = 0; i < total; i++) {
+      if (p + 46 > ab.byteLength || v.getUint32(p, true) !== 0x02014b50) {
+        throw Error("Índice ZIP inválido.");
+      }
+      const metodo = v.getUint16(p + 10, true);
+      const comprimido = v.getUint32(p + 20, true);
+      const descomprimido = v.getUint32(p + 24, true);
+      const nl = v.getUint16(p + 28, true);
+      const el = v.getUint16(p + 30, true);
+      const cl = v.getUint16(p + 32, true);
+      const loc = v.getUint32(p + 42, true);
+      const nombre = new TextDecoder().decode(new Uint8Array(ab, p + 46, nl));
+      if (nombre.toLowerCase().endsWith(".kml") &&
+          !nombre.startsWith("__MACOSX/")) {
+        encontrados.push({ nombre, metodo, comprimido, descomprimido, loc });
+      }
+      p += 46 + nl + el + cl;
+    }
+    encontrados.sort((a, b) =>
+      Number(b.nombre.toLowerCase().endsWith("doc.kml")) -
+      Number(a.nombre.toLowerCase().endsWith("doc.kml")));
+    const a = encontrados[0];
+    if (!a) throw Error("El KMZ no contiene archivos KML.");
+    if (a.descomprimido > 30000000) throw Error("KML interno demasiado grande.");
+    if (a.loc + 30 > ab.byteLength || v.getUint32(a.loc, true) !== 0x04034b50) {
+      throw Error("Entrada ZIP inválida.");
+    }
+    const inicio = a.loc + 30 + v.getUint16(a.loc + 26, true) +
+      v.getUint16(a.loc + 28, true);
+    if (inicio + a.comprimido > ab.byteLength) throw Error("Entrada ZIP incompleta.");
+    const bytes = new Uint8Array(ab, inicio, a.comprimido);
+    if (a.metodo === 0) return new TextDecoder().decode(bytes);
+    if (a.metodo !== 8) throw Error("Compresión ZIP no admitida.");
+    if (typeof DecompressionStream !== "function") {
+      throw Error("Tu navegador no permite descomprimir KMZ; prueba con KML.");
+    }
+    const flujo = new Blob([bytes]).stream().pipeThrough(
+      new DecompressionStream("deflate-raw"));
+    const salida = await new Response(flujo).arrayBuffer();
+    if (salida.byteLength > 30000000) {
+      throw Error("KML descomprimido demasiado grande.");
+    }
+    return new TextDecoder().decode(salida);
+  }
+
+  function extraerPuntos(g) {
+    if (!g) return [];
+    const tipo = g.getType();
+    if (tipo === "Point") return [g.getCoordinates()];
+    if (tipo === "MultiPoint") return g.getCoordinates();
+    if (tipo === "GeometryCollection") return g.getGeometries().flatMap(extraerPuntos);
+    return [];
+  }
+
+  async function cargar(file) {
+    if (!file) return;
+    const token = ++cargaId;
+    mensaje("Leyendo " + file.name + "...");
+    try {
+      const kml = /\.kmz$/i.test(file.name) ? await leerKMZ(file) : await file.text();
+      if (!abierto || token !== cargaId) return;
+      const xml = new DOMParser().parseFromString(kml, "application/xml");
+      if (xml.querySelector("parsererror")) throw Error("El KML no es XML válido.");
+      const formato = new ol.format.KML({ extractStyles: false, showPointNames: false });
+      const entidades = formato.readFeatures(kml, {
+        dataProjection: "EPSG:4326",
+        featureProjection: map.getView().getProjection()
+      });
+      const nuevos = [];
+      for (const original of entidades) {
+        const codigo = String(original.get("name") || "").trim();
+        for (const xy of extraerPuntos(original.getGeometry())) {
+          if (!xy.every(Number.isFinite)) continue;
+          const punto = new ol.Feature({
+            geometry: new ol.geom.Point(xy),
+            codigo: codigo || "Sin código",
+            numero: nuevos.length + 1,
+            bloque: "Azul"
+          });
+          nuevos.push(punto);
+        }
+      }
+      if (!nuevos.length) throw Error("El archivo no contiene puntos.");
+      const nuevaCapa = new ol.layer.Vector({
+        source: new ol.source.Vector({features: nuevos}),
+        zIndex: 100000,
+        style: estiloPunto
+      });
+      retirarCapa();
+      puntos = nuevos;
+      capa = nuevaCapa;
+      nombreArchivo = file.name.replace(/\.(kmz|kml)$/i, "");
+      map.addLayer(capa);
+      reconstruirLista();
+      dibujarTabla();
+      mensaje(`Cargados ${puntos.length} puntos. Todos comienzan en Azul; ` +
+        "selecciona los demás para repartirlos.");
+      console.log("Centrality: puntos cargados", puntos.length);
+    } catch (e) {
+      if (abierto && token === cargaId) {
+        mensaje("Error: " + e.message, true);
+        console.error("Centrality: error al cargar archivo", e);
+      }
+    }
+  }
+
+  function encuadrar(indices) {
+    if (!capa) { mensaje("Carga un KMZ o KML primero.", true); return; }
+    if (!indices.length) { mensaje("Selecciona al menos un punto.", true); return; }
+    if (indices.length === 1) { navegar(indices[0]); return; }
+    const coords = indices.map(i => puntos[i]?.getGeometry().getCoordinates()).filter(Boolean);
+    if (!coords.length) return;
+    const xs = coords.map(c => c[0]);
+    const ys = coords.map(c => c[1]);
+    const extent = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    map.getView().fit(extent, {
+      size: map.getSize(),
+      padding: [55, margenDerechoMapa() + 20, 55, 45],
+      maxZoom: 17.5, duration: 350
+    });
+  }
+
+  // CSV con separador ; para abrir cómodamente en Excel en Chile.
+  const entreComillas = v => '"' + String(v).replace(/"/g, '""') + '"';
+  function guardarCSV() {
+    if (!puntos.length) { mensaje("Carga puntos antes de exportar.", true); return; }
+    const lineas = ["Numero;CodigoPoste;Bloque;Longitud;Latitud"];
+    for (const f of puntos) {
+      const xy = f.getGeometry().getCoordinates();
+      let lng = "", lat = "";
+      if (ol.proj?.toLonLat) {
+        [lng, lat] = ol.proj.toLonLat(xy, map.getView().getProjection());
+      }
+      lineas.push([
+        f.get("numero"), entreComillas(puntoCodigoOriginal(f)), f.get("bloque"), lng, lat
+      ].join(";"));
+    }
+    const blob = new Blob(["\ufeff" + lineas.join("\r\n")],
+      {type: "text/csv;charset=utf-8"});
+    const url = w.URL.createObjectURL(blob);
+    const a = doc.createElement("a");
+    a.href = url;
+    a.download = `${nombreArchivo}_reparto_supervisores.csv`;
+    doc.body.appendChild(a);
+    a.click();
+    a.remove();
+    w.setTimeout(() => w.URL.revokeObjectURL(url), 2000);
+    mensaje("CSV guardado localmente con el reparto actual.");
+  }
+
+  function leerFilaCSV(linea) {
+    const partes = [];
+    let valor = "", comillas = false;
+    for (let i = 0; i < linea.length; i++) {
+      const c = linea[i];
+      if (c === '"') {
+        if (comillas && linea[i + 1] === '"') { valor += '"'; i++; }
+        else comillas = !comillas;
+      } else if (c === ";" && !comillas) {
+        partes.push(valor);
+        valor = "";
+      } else valor += c;
+    }
+    if (comillas) throw Error("CSV con comillas incompletas.");
+    partes.push(valor);
+    return partes;
+  }
+
+  async function recuperarCSV(file) {
+    if (!file || !puntos.length) {
+      if (!puntos.length) mensaje("Carga primero el KMZ/KML original.", true);
+      return;
+    }
+    try {
+      const texto = (await file.text()).replace(/^\ufeff/, "");
+      const lineas = texto.split(/\r?\n/).filter(x => x.trim() !== "");
+      if (lineas.length < 2 ||
+          leerFilaCSV(lineas[0]).slice(0, 3).join(";") !==
+          "Numero;CodigoPoste;Bloque") {
+        throw Error("Selecciona un CSV exportado por este panel.");
+      }
+      const cambios = new Map();
+      for (const linea of lineas.slice(1)) {
+        const [n, codigo, bloque] = leerFilaCSV(linea);
+        const i = Number(n) - 1;
+        if (!Number.isInteger(i) || !puntos[i] ||
+            puntoCodigoOriginal(puntos[i]) !== codigo || !BLOQUES.includes(bloque) ||
+            cambios.has(i)) {
+          throw Error("El CSV no corresponde a los mismos puntos y orden del KMZ/KML.");
+        }
+        cambios.set(i, bloque);
+      }
+      if (cambios.size !== puntos.length) {
+        throw Error("La cantidad de puntos del CSV no coincide con el archivo cargado.");
+      }
+      for (const [i, bloque] of cambios) puntos[i].set("bloque", bloque);
+      seleccionado.clear();
+      dibujarTabla();
+      redibujarMapa();
+      mensaje(`Recuperado reparto de ${cambios.size} puntos desde CSV.`);
+    } catch (e) {
+      mensaje("Error al recuperar CSV: " + e.message, true);
+    } finally {
+      archivoCSV.value = "";
+    }
+  }
+
+  archivo.addEventListener("change", () => cargar(archivo.files?.[0]));
+  busqueda.addEventListener("input", dibujarTabla);
+  bloqueFiltro.addEventListener("change", dibujarTabla);
+  modoEtiqueta.addEventListener("change", () => {
+    etiquetas = modoEtiqueta.value;
+    redibujarMapa();
+  });
+  lista.addEventListener("change", () => {
+    if (lista.value !== "") navegar(Number(lista.value));
+  });
+  checkTodo.addEventListener("change", () => {
+    const visibles = puntosFiltrados();
+    const marcar = checkTodo.checked;
+    for (const f of visibles) {
+      const i = Number(f.get("numero")) - 1;
+      if (marcar) seleccionado.add(i);
+      else seleccionado.delete(i);
+    }
+    dibujarTabla();
+    redibujarMapa();
+  });
+  limpiarSel.addEventListener("click", () => {
+    seleccionado.clear(); dibujarTabla(); redibujarMapa();
+  });
+  for (const bloque of BLOQUES) {
+    botonesColores[bloque].addEventListener("click", () =>
+      asignar([...seleccionado], bloque));
+  }
+  verTodos.addEventListener("click", () => {
+    encuadrar(puntos.map((_, i) => i));
+  });
+  verSeleccion.addEventListener("click", () => {
+    encuadrar([...seleccionado]);
+  });
+  quitar.addEventListener("click", () => {
+    ++cargaId;
+    retirarCapa();
+    archivo.value = "";
+    mensaje("Puntos retirados.");
+  });
+  exportar.addEventListener("click", guardarCSV);
+  importar.addEventListener("click", () => {
+    if (!puntos.length) { mensaje("Carga primero el KMZ/KML original.", true); return; }
+    archivoCSV.click();
+  });
+  archivoCSV.addEventListener("change", () => recuperarCSV(archivoCSV.files?.[0]));
+
+  // Contraído: solo botón flotante 36 x 36, sin encabezado ni menú.
+  // Guardar los display originales, incluido el input CSV oculto.
+  const secciones = [...panel.children].filter(el => el !== titulo);
+  const displayOriginal = new Map(secciones.map(el => [el, el.style.display]));
+  let oculto = false;
+  ocultar.addEventListener("click", () => {
+    oculto = !oculto;
+    secciones.forEach(el => {
+      el.style.display = oculto ? "none" : displayOriginal.get(el);
+    });
+    tituloTexto.style.display = oculto ? "none" : "";
+    titulo.style.marginBottom = oculto ? "0" : "8px";
+    titulo.style.gap = oculto ? "0" : "7px";
+    panel.style.width = oculto ? "36px" : "450px";
+    panel.style.padding = oculto ? "0" : "14px";
+    panel.style.background = oculto ? "transparent" : "#fff";
+    panel.style.border = oculto ? "none" : "1px solid #bdc7d0";
+    panel.style.boxShadow = oculto ? "none" : "0 7px 30px #0004";
+    ocultar.textContent = oculto ? "☰" : "Contraer";
+    ocultar.title = oculto ? "Mostrar panel de supervisores" : "Ocultar panel";
+    ocultar.setAttribute("aria-expanded", String(!oculto));
+    ocultar.style.width = oculto ? "36px" : "";
+    ocultar.style.height = oculto ? "36px" : "";
+    ocultar.style.padding = oculto ? "0" : "5px 8px";
+    ocultar.style.fontSize = oculto ? "21px" : "12px";
+  });
+  function cerrarPanel() {
+    abierto = false;
+    ++cargaId;
+    retirarCapa();
+    panel.remove();
+    if (w.__superponerKMZ?.cerrar === cerrarPanel) delete w.__superponerKMZ;
+  }
+  cerrar.addEventListener("click", cerrarPanel);
+  w.__superponerKMZ = { cerrar: cerrarPanel };
+  retirarCapa();
+  console.log("Panel de supervisores listo: selecciona KMZ o KML.");
+})();

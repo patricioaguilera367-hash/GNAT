@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centrality Local V5 · Visor modular</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+<header class="topbar"><div class="brand"><span class="brand-symbol">⌁</span><div><strong>Centrality Local</strong><small>Visor cartográfico independiente · Piloto</small></div></div>
+<div class="top-actions"><span id="status-top" class="subtle">Servidor local</span><button id="toggle-sidebar" class="secondary">☰ Panel</button></div></header>
+<div class="layout" id="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav class="tabs" aria-label="Módulos"><button data-tab="puntos" class="active">Puntos</button><button data-tab="masiva">Masiva</button><button data-tab="capturas">Mosaico</button><button data-tab="capas">Capas</button><button data-tab="gnat">GNAT</button></nav>
+    <section class="tab-section" id="tab-puntos">
+      <h2>Puntos y supervisores</h2>
+      <p class="muted">Importa KMZ, KML o CSV. Los datos quedan en SQLite local.</p>
+      <label class="upload">Importar KMZ / KML / CSV <input id="import-file" type="file" accept=".kmz,.kml,.csv" hidden></label>
+      <label class="field"><span>Formato de exportación</span><select id="export-kind"><option value="legacy">Todos (CSV compatible)</option><option value="route">Recorrido (v6)</option><option value="opening">Aperturas (v6)</option></select></label>
+      <div class="toolbar"><button id="download-csv" class="secondary">Exportar CSV</button><button id="fit-all" class="secondary">Ver todos</button></div>
+      <div id="counters" class="counters">0 puntos</div>
+      <label class="field"><span>Buscar por número o código</span><input id="find" type="search" placeholder="Ej: 68, F61663"></label>
+      <div class="toolbar"><select id="filter-supervisor" aria-label="Filtrar supervisor"><option value="">Todos los supervisores</option><option value="_none">Sin supervisor</option><option>Verde</option><option>Naranjo</option><option>Azul</option></select><button id="check-all" class="secondary">Seleccionar visibles</button></div>
+      <label class="field"><span>Bloque de trabajo</span><select id="filter-block"><option value="">Todos los bloques</option></select></label>
+      <div class="table-scroll"><table><thead><tr><th>✓</th><th>N°</th><th>Código</th><th>Bloque</th></tr></thead><tbody id="point-rows"></tbody></table></div>
+      <div class="assignment"><span id="selected-count">0 seleccionados</span><div class="toolbar"><button data-assign="" class="tag-red">Sin asignar</button><button data-assign="Verde" class="tag-green">Verde</button><button data-assign="Naranjo" class="tag-orange">Naranjo</button><button data-assign="Azul" class="tag-blue">Azul</button></div></div>
+      <div id="point-editor" class="editor hidden"><h3>Editar punto <span id="editor-num"></span></h3>
+        <label class="field"><span>Código</span><input id="edit-code" maxlength="180"></label>
+        <div class="toolbar"><label class="field grow"><span>Tipo</span><select id="edit-type"><option value="sin clasificar">Sin clasificar</option><option value="poste">Poste</option><option value="subestacion">Subestación</option><option value="otro">Otro</option></select></label><label class="field grow"><span>Supervisor</span><select id="edit-supervisor"><option value="">Sin supervisor</option><option>Verde</option><option>Naranjo</option><option>Azul</option></select></label></div>
+        <label class="field"><span>Categoría</span><input id="edit-category"></label>
+        <label class="field"><span>Descripción</span><textarea id="edit-description" rows="2"></textarea></label>
+        <button id="save-point" class="primary">Guardar cambios</button>
+      </div>
+    </section>
+    <section class="tab-section hidden" id="tab-masiva"><h2>Buscar varios códigos</h2>
+      <p class="muted">Coincidencia exacta en tu base local. No consulta automáticamente GNAT/Centrality.</p>
+      <label class="field"><span>Un código por línea (máx. 500)</span><textarea id="batch-codes" rows="7" placeholder="F697480&#10;F61663&#10;F51757"></textarea></label>
+      <div class="toolbar"><label class="checkline"><input type="checkbox" id="type-poste" checked> Poste</label><label class="checkline"><input type="checkbox" id="type-sed" checked> Subestación</label><label class="checkline"><input type="checkbox" id="type-unclassified"> Sin clasificar</label></div>
+      <button id="batch-search" class="primary wide">Buscar coincidencias exactas</button>
+      <div id="batch-summary" class="muted spacing"></div><div id="batch-results" class="batch-results"></div>
+    </section>
+    <section class="tab-section hidden" id="tab-capturas"><h2>Mosaico local</h2>
+      <p class="muted">Importa capturas georreferenciadas de Centrality. Se superponen sobre el mapa sin depender de su carga en vivo.</p>
+      <label class="upload">Importar captura JSON <input type="file" accept=".json" id="capture-file" hidden></label>
+      <p class="hint">Usa el snippet de <strong>bridge/exportar_vista_centrality.js</strong> dentro de Centrality para generar el archivo.</p>
+      <div class="notice">Piloto: capturas manuales verificables. Aún <strong>no</strong> recorre automáticamente 100 km ni descarga toda la red.</div>
+      <div id="capture-list" class="capture-list"></div>
+    </section>
+    <section class="tab-section hidden" id="tab-capas"><h2>Capas visibles</h2>
+      <label class="switch"><input id="toggle-osm" type="checkbox"><span>Mapa base OpenStreetMap</span></label>
+      <p class="hint">Desactivado al iniciar. Al activarlo solicita teselas externas; requiere Internet para visualizar las teselas normales de navegación.</p>
+      <label class="switch"><input id="toggle-captures" type="checkbox" checked><span>Capturas eléctricas locales</span></label>
+      <label class="switch"><input id="toggle-numbers" type="checkbox" checked><span>Mostrar números</span></label>
+      <label class="switch"><input id="toggle-codes" type="checkbox"><span>Mostrar códigos</span></label>
+      <label class="field"><span>Visibilidad de etiquetas</span><select id="label-mode"><option value="cerca">Número al acercar</option><option value="siempre">Siempre números</option><option value="ninguna">Ocultar etiquetas</option></select></label>
+      <div class="notice"><strong>Estado MT/BT:</strong> aún no hay conexión directa a las capas WMTS privadas de Centrality. El visor muestra únicamente capturas que tú importes, sin trasladar credenciales.</div>
+      <h3>Arquitectura</h3><p class="muted">Python (servidor) · SQLite (una tabla de puntos) · JavaScript por módulos · canvas cartográfico.</p>
+    </section>
+    <section class="tab-section hidden" id="tab-gnat">
+      <h2>GNAT · consulta opcional</h2>
+      <p id="gnat-status" role="status">Desconectado · pendiente de configurar.</p>
+      <p class="muted">La ficha de activo oficial es independiente de los puntos de trabajo. No se vincula ni actualiza SQLite automáticamente.</p>
+      <button id="gnat-consult" disabled title="Requiere contrato, autorización y conexión validados">Consultar GNAT</button>
+      <h3>Prueba local sin GNAT</h3>
+      <p class="hint">Solo MOCK. F5353 reproduce el Point del informe; las líneas son SINTÉTICAS y no representan un tramo GNAT confirmado.</p>
+      <label class="field"><span>Código exacto del fixture</span><input id="gnat-query" value="F5353" maxlength="180" list="gnat-examples"></label>
+      <datalist id="gnat-examples"><option value="F5353"><option value="SINTETICO_LINEA"><option value="SINTETICO_MULTILINEA"></datalist>
+      <label class="field"><span>Tipo de activo MOCK</span><select id="gnat-type"><option value="">Todos</option><option value="poste">Poste</option><option value="subestacion">Subestación</option><option value="tramo">Tramo sintético</option></select></label>
+      <button id="gnat-mock" class="primary">Buscar fixture MOCK</button>
+      <button id="gnat-clear" class="secondary">Borrar ficha MOCK</button>
+      <label class="switch"><input id="gnat-overlay" type="checkbox" disabled><span>Mostrar geometría MOCK en el mapa</span></label>
+      <div id="gnat-asset" class="asset-detail" aria-live="polite"></div>
+      <p class="hint">Datos efímeros en memoria, sin caché oficial. Consulte docs/CONTRATO_GNAT.md para el diagnóstico manual.</p>
+    </section>
+    <div class="sidebar-footer" id="message" role="status">Listo para importar datos.</div>
+  </aside>
+  <main class="map-area"><canvas id="map" aria-label="Mapa interactivo"></canvas><div class="map-top-right"><button class="zoom-btn" id="zoom-in" title="Acercar">+</button><button class="zoom-btn" id="zoom-out" title="Alejar">−</button></div><div class="map-hint">Arrastra para mover · Rueda para zoom · Clic en un punto para editarlo</div><div class="map-footer"><span id="map-coordinates">Zoom —</span><span class="attribution">© OpenStreetMap contributors (cuando está activo)</span></div></main>
+</div>
+<script type="module" src="/app.js"></script>
+</body></html>

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+datos/*
+!datos/.keep
+Centrality_Local_V5/
+Centrality - Mapa*
+.codegraph/
+*.zip
+*.csv
+*.kml
+*.kmz
+!examples/*.csv
+centrality_vista_*.json
+v4.js
+v6.txt
+odd/preservation-before.json

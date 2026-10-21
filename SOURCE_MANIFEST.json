@@ -1,0 +1,670 @@
+{
+  "format": "gnat-v6-source-manifest/1",
+  "generated_date": "2026-10-21",
+  "scope": "Explicit allowlisted originals only, not generated guides or master. Hashes identify bytes, not correctness.",
+  "version_note": "User-designated V6 is original v6.txt; internal labels remain CENTRALITY V4.",
+  "file_count": 66,
+  "total_source_bytes": 585420,
+  "entries": [
+    {
+      "source_relative_path": ".gitignore",
+      "package_relative_path": "original-ignore-policies/.gitignore.original",
+      "role": "inert-original-ignore-policy",
+      "bytes": 214,
+      "sha256": "E236EC9322EA0DD48903291FF6261A49CABF50393E1615E43B4184CF8F085220",
+      "evidence_class": "archived unchanged, not active package policy",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "GNAT_BUSQUEDA.md",
+      "package_relative_path": "snapshot/GNAT_BUSQUEDA.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 8209,
+      "sha256": "F1719525F8BA04253DFA5F10574FAD062D72D541D5FB402138ADF508E165A210",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "GNAT_SELECCION_FICHAS.md",
+      "package_relative_path": "snapshot/GNAT_SELECCION_FICHAS.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 14870,
+      "sha256": "0EE2B3A2A5F7DF6EA7C48EE29BAEAA4018130446CFDDE37F72DFC5F8EC41A563",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "GNAT_TOPOLOGIA.md",
+      "package_relative_path": "snapshot/GNAT_TOPOLOGIA.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 4085,
+      "sha256": "12A8A72D847D195D16E0B668F244220460429AC4BBADE6AFA4206C25C50BBEDC",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "INICIAR.bat",
+      "package_relative_path": "snapshot/INICIAR.bat",
+      "role": "reference-source",
+      "bytes": 368,
+      "sha256": "06EE3605EBDECE79A20EB48423752AB4FBA04212E0391C994995337D49D0B00F",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "README.md",
+      "package_relative_path": "snapshot/README.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 6230,
+      "sha256": "6A4D8B7028A0CB4A676B104EB5D7ACE4B03A9F08A017EAB185502C87DF6EC561",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/__init__.py",
+      "package_relative_path": "snapshot/app/__init__.py",
+      "role": "reference-source",
+      "bytes": 58,
+      "sha256": "D7673407594C3EF25481FCCDBE0BDE9C1BA2E462ACAA4A063454CE29AA503E2E",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/captures.py",
+      "package_relative_path": "snapshot/app/captures.py",
+      "role": "reference-source",
+      "bytes": 2518,
+      "sha256": "4E9967C5C1C5C27B42E90C67E8FAFF13C7C4ECAB7FE818859360103453EF43FA",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/config.py",
+      "package_relative_path": "snapshot/app/config.py",
+      "role": "reference-source",
+      "bytes": 341,
+      "sha256": "29EA7734B6AA6322732155E3617A0A7B1F7BB0EEC481E58576F3A5E951DA2290",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/db.py",
+      "package_relative_path": "snapshot/app/db.py",
+      "role": "reference-source",
+      "bytes": 8586,
+      "sha256": "804867BA0CED2F0F12FF4A66EC03A31761117C795178CA1FEED982B3DA767B3E",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/importers.py",
+      "package_relative_path": "snapshot/app/importers.py",
+      "role": "reference-source",
+      "bytes": 8430,
+      "sha256": "1F92675965BF74059FB9FCBA56372AFEBFA59128491F314F93F715A0569C6DBF",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/integrations/__init__.py",
+      "package_relative_path": "snapshot/app/integrations/__init__.py",
+      "role": "reference-source",
+      "bytes": 60,
+      "sha256": "725BD56BDEBF51013FCF8F367D09FA11B9ABFD6122F4C08C0B585FFD70789CCA",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/integrations/gnat.py",
+      "package_relative_path": "snapshot/app/integrations/gnat.py",
+      "role": "reference-source",
+      "bytes": 9055,
+      "sha256": "652421D631041B66B74D0230B209CB8DAAB51B49D86294D936E3E3CC9FF147B7",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "app/server.py",
+      "package_relative_path": "snapshot/app/server.py",
+      "role": "reference-source",
+      "bytes": 10693,
+      "sha256": "457BA08C6173EDF532575CE1BADB3FDC5FB4E3F205BF90566D9EB5072E3722F9",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "bridge/diagnostico_contrato_gnat.js",
+      "package_relative_path": "snapshot/bridge/diagnostico_contrato_gnat.js",
+      "role": "reference-source",
+      "bytes": 9974,
+      "sha256": "957040621F2D445F928653C1CBF5BE7A8295F64C13A6600F2E214591CECE75C0",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "bridge/diagnostico_contrato_gnat.txt",
+      "package_relative_path": "snapshot/bridge/diagnostico_contrato_gnat.txt",
+      "role": "reference-source",
+      "bytes": 9974,
+      "sha256": "957040621F2D445F928653C1CBF5BE7A8295F64C13A6600F2E214591CECE75C0",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "bridge/exportar_vista_centrality.js",
+      "package_relative_path": "snapshot/bridge/exportar_vista_centrality.js",
+      "role": "reference-source",
+      "bytes": 3621,
+      "sha256": "D254A3CB9D16F0018FC713E058F89F5CFEF7776A27BB0E98639666DC9340F9AC",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "datos/.keep",
+      "package_relative_path": "snapshot/datos/.keep",
+      "role": "reference-source",
+      "bytes": 0,
+      "sha256": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "docs/ARQUITECTURA.md",
+      "package_relative_path": "snapshot/docs/ARQUITECTURA.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 5703,
+      "sha256": "0999DE9BF075718C1910F87A2D41FFFF05B07831C5FC7F032F8AA344C1BC45F6",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "docs/CAMBIOS.md",
+      "package_relative_path": "snapshot/docs/CAMBIOS.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 2522,
+      "sha256": "96FCC087F08916964BA9A1773054AA32EA10749BD4318027FAF3DCD1508620F8",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "docs/CONTEXTO_DE_PROYECTO.md",
+      "package_relative_path": "snapshot/docs/CONTEXTO_DE_PROYECTO.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 1336,
+      "sha256": "E9D7553A55771B321CA6463BA96BB4F576410A7BC22A3C0F73C530C9EC5C4650",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "docs/CONTRATO_GNAT.md",
+      "package_relative_path": "snapshot/docs/CONTRATO_GNAT.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 8634,
+      "sha256": "BF462175544F7906487220E35D027CC09C540C277EABCDDAFD4A5C872D09C72F",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "examples/aperturas.csv",
+      "package_relative_path": "snapshot/examples/aperturas.csv",
+      "role": "demo-data",
+      "bytes": 122,
+      "sha256": "EB1B038084F90DF068BAC8A6231EAD319140EB5DC5310A8D60A7EFE057A72713",
+      "evidence_class": "documented synthetic demonstration, not original field data",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "examples/plantilla_puntos.csv",
+      "package_relative_path": "snapshot/examples/plantilla_puntos.csv",
+      "role": "demo-data",
+      "bytes": 250,
+      "sha256": "A5B1AEE6823C51D34BC6A36E7FB136994BC106861E2BA98377417EEEC5BC137E",
+      "evidence_class": "documented synthetic demonstration, not original field data",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "examples/recorrido.csv",
+      "package_relative_path": "snapshot/examples/recorrido.csv",
+      "role": "demo-data",
+      "bytes": 179,
+      "sha256": "81D81BB8F80C61229F07B4BEABD20A8BC832075167E820569B4458B18EED2E9F",
+      "evidence_class": "documented synthetic demonstration, not original field data",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/.gitignore",
+      "package_relative_path": "original-ignore-policies/gnat-research__.gitignore.original",
+      "role": "inert-original-ignore-policy",
+      "bytes": 53,
+      "sha256": "1BE5BD4EB8CFCBDB7E1CFF9E6F7FCA6369B63535EF168E7A644EAABD80613EF8",
+      "evidence_class": "archived unchanged, not active package policy",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/CENTRALITY_IMPLEMENTACION.md",
+      "package_relative_path": "snapshot/gnat-research/CENTRALITY_IMPLEMENTACION.md",
+      "role": "research",
+      "bytes": 3603,
+      "sha256": "C5C86BDC32ECC4D712F2CD9D3483E3497E624C9A01641992813CEFEF15E8E496",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/COBERTURA.md",
+      "package_relative_path": "snapshot/gnat-research/COBERTURA.md",
+      "role": "research",
+      "bytes": 3316,
+      "sha256": "3415300FB098968E7D1BC2F4DAF637F99001163CB1881EA12F657264C1CB1E6D",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/CONTRATOS.md",
+      "package_relative_path": "snapshot/gnat-research/CONTRATOS.md",
+      "role": "research",
+      "bytes": 3499,
+      "sha256": "E5000BCAE1C223696CF40A9C26FEDFF2A7EACAD349923317E02C8517CEB7A12C",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/ENDPOINTS.md",
+      "package_relative_path": "snapshot/gnat-research/ENDPOINTS.md",
+      "role": "research",
+      "bytes": 2416,
+      "sha256": "A2CEFCC7505BF597C2DFC0E16C1A02A3BD57A3C82C57394114555454A6FF69ED",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/EVIDENCIA_CONFIRMADA.md",
+      "package_relative_path": "snapshot/gnat-research/EVIDENCIA_CONFIRMADA.md",
+      "role": "research",
+      "bytes": 7737,
+      "sha256": "7A5BA157793B8BE7D02EC8EF412CAA4171FE38A529541E6E4A239C13F1FBD5FA",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/FLUJOS.md",
+      "package_relative_path": "snapshot/gnat-research/FLUJOS.md",
+      "role": "research",
+      "bytes": 3283,
+      "sha256": "E0F60031BEC1ECAC9B4E4ACC108A8E26EFEB7A1213982D53272999736DC330DD",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/GEOLOCALIZACION.md",
+      "package_relative_path": "snapshot/gnat-research/GEOLOCALIZACION.md",
+      "role": "research",
+      "bytes": 7209,
+      "sha256": "E5C62160AFF349F1A67FAB72981CFD7DEC92E3CBC5646710C3078498335DEACC",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/MODELO_DATOS.md",
+      "package_relative_path": "snapshot/gnat-research/MODELO_DATOS.md",
+      "role": "research",
+      "bytes": 3522,
+      "sha256": "52F490A48B038088D3CE6A0DFA2ADAD278CB6BF1FD961DEAC5B8D9EF006E9DCE",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/PENDIENTES.md",
+      "package_relative_path": "snapshot/gnat-research/PENDIENTES.md",
+      "role": "research",
+      "bytes": 3122,
+      "sha256": "69F05026797B86B01393D4C5C9F41C6AA451C54CBF32B3F2B21FEC10F573CDB6",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/README.md",
+      "package_relative_path": "snapshot/gnat-research/README.md",
+      "role": "research",
+      "bytes": 9669,
+      "sha256": "956871670AF58E8A98F42BBBD4CB671C32DECDED482991DDD7DA512C974BDEFC",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/WIDGETS.md",
+      "package_relative_path": "snapshot/gnat-research/WIDGETS.md",
+      "role": "research",
+      "bytes": 2760,
+      "sha256": "B97C15A6EDBF340DE6E96AE0F036559C6229776D0BCABB16C54B52DBED036C1D",
+      "evidence_class": "mixed labelled response/UI/client/proposal/offline evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/fixtures/contracts.observed.anonymized.json",
+      "package_relative_path": "snapshot/gnat-research/fixtures/contracts.observed.anonymized.json",
+      "role": "fixture",
+      "bytes": 4788,
+      "sha256": "A770945F1A9DB0FBC1CDD4B5A516E52C70A9E78594C9B469A4AD10D68A2AFEF2",
+      "evidence_class": "transformed-observed partial evidence",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/fixtures/geojson.synthetic.json",
+      "package_relative_path": "snapshot/gnat-research/fixtures/geojson.synthetic.json",
+      "role": "fixture",
+      "bytes": 173,
+      "sha256": "004BF1318777502AFFD64936B145184A04D44CD8301A1B383F3016556801B961",
+      "evidence_class": "synthetic",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/inspector/cli.cjs",
+      "package_relative_path": "snapshot/gnat-research/inspector/cli.cjs",
+      "role": "reference-source",
+      "bytes": 6896,
+      "sha256": "8054658C30D1029CFE9CF24F6E22B357BC333576618143F00894B12CD8A961DC",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/inspector/core.cjs",
+      "package_relative_path": "snapshot/gnat-research/inspector/core.cjs",
+      "role": "reference-source",
+      "bytes": 20361,
+      "sha256": "71A59C74EAE60EEB40338616B13FB25AF363CFD972F33B13D6D247FB501A54DF",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/tests/inspector.test.cjs",
+      "package_relative_path": "snapshot/gnat-research/tests/inspector.test.cjs",
+      "role": "offline-test",
+      "bytes": 15312,
+      "sha256": "88772B410C8C4B866E7DE965845F96A7BC1EA142CCEC723AE3FE496A9EEB6C48",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/tests/observed-contracts.test.cjs",
+      "package_relative_path": "snapshot/gnat-research/tests/observed-contracts.test.cjs",
+      "role": "offline-test",
+      "bytes": 2574,
+      "sha256": "7747132C224112623C12F4FC0983CA6269AC4D6188C99BC6055AE4135657420E",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "gnat-research/tests/transport-cli.test.cjs",
+      "package_relative_path": "snapshot/gnat-research/tests/transport-cli.test.cjs",
+      "role": "offline-test",
+      "bytes": 4026,
+      "sha256": "E0B03C9917FF3C8A3CF07DDF3EC998C703392FAAED4A31E8C55BA6E98FCB781A",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "iniciar.py",
+      "package_relative_path": "snapshot/iniciar.py",
+      "role": "reference-source",
+      "bytes": 337,
+      "sha256": "1674D4223716FF0428E9EA4E6DB97EBDCFE68E8CA19525A3A444DCA941F67624",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "legacy/Buscador_V2_referencia.txt",
+      "package_relative_path": "snapshot/legacy/Buscador_V2_referencia.txt",
+      "role": "reference-source",
+      "bytes": 27894,
+      "sha256": "11F475F88F572069D71AE85F1A66B0747919B991490565AEADAFC93A04AB634C",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "legacy/Global_V4_1_referencia.js",
+      "package_relative_path": "snapshot/legacy/Global_V4_1_referencia.js",
+      "role": "reference-source",
+      "bytes": 65429,
+      "sha256": "D35ECF278BE94DE47EE2415553DA38D6C2ABB294B1145E413E900EF18BF96893",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "odd/tasks/centrality-gnat-integration.md",
+      "package_relative_path": "snapshot/odd/tasks/centrality-gnat-integration.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 19041,
+      "sha256": "772165EB0B6D3FC5D0458880A523D19C04D2EF72F0FD8C705922DEB4FC14CEEC",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "odd/tasks/csv-master-markers.md",
+      "package_relative_path": "snapshot/odd/tasks/csv-master-markers.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 5963,
+      "sha256": "DE4F5022A7F9CF20E55F79C30DEFB54E494E829A8093539E46EDE5C998247684",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "odd/tasks/gnat-research-inspector.md",
+      "package_relative_path": "snapshot/odd/tasks/gnat-research-inspector.md",
+      "role": "historical-or-project-documentation",
+      "bytes": 12671,
+      "sha256": "B2ECC4C074D6848A48044B7D3BAFEC77D8C8644ADEC5650CDBAE02A766B0B298",
+      "evidence_class": "preserved snapshot; current evidence ledger governs covered updates",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/diagnostic.test.js",
+      "package_relative_path": "snapshot/tests/diagnostic.test.js",
+      "role": "offline-test",
+      "bytes": 5000,
+      "sha256": "99F261045F336EA05DBD4414472020A12228E7196265221346E41D5A0C6E6B5F",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/gnat-ui.test.js",
+      "package_relative_path": "snapshot/tests/gnat-ui.test.js",
+      "role": "offline-test",
+      "bytes": 3667,
+      "sha256": "79BA060B19BB3049B32E3E291DD1A540E5770797D4FD4DEDD36472DF657CF39F",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/map.test.js",
+      "package_relative_path": "snapshot/tests/map.test.js",
+      "role": "offline-test",
+      "bytes": 2742,
+      "sha256": "6CF33CEC002C403CAB9B6548FAB46D63765632623CE71A524942153ACCA71B96",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/test_compat.py",
+      "package_relative_path": "snapshot/tests/test_compat.py",
+      "role": "offline-test",
+      "bytes": 5573,
+      "sha256": "97ED1B1E03FF70F98683C51E0CF1653173D7178860930A1F5538922B0C8231FD",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/test_core.py",
+      "package_relative_path": "snapshot/tests/test_core.py",
+      "role": "offline-test",
+      "bytes": 3896,
+      "sha256": "D01CA9DBCF5D7497B1550AAEF317A5A61B1769AE564A6C3353982164958DD75D",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/test_gnat.py",
+      "package_relative_path": "snapshot/tests/test_gnat.py",
+      "role": "offline-test",
+      "bytes": 5481,
+      "sha256": "78030076ECC5AEF0DCA378FF8F0169AEA8458128C1B6E4ACBA2FAE6C9C1F4F8E",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/test_http.py",
+      "package_relative_path": "snapshot/tests/test_http.py",
+      "role": "offline-test",
+      "bytes": 6507,
+      "sha256": "603A7C021CCEE50A6852B1F492FF0243E3BA085013EB1F43F6B50DA0B9830CA0",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "tests/test_launcher.py",
+      "package_relative_path": "snapshot/tests/test_launcher.py",
+      "role": "offline-test",
+      "bytes": 1099,
+      "sha256": "C0EC0C88A327CBFE678FEE5EA938A375368EA8C0591FB6C067A81EA4C3102AF1",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "v4.js",
+      "package_relative_path": "snapshot/v4.js",
+      "role": "reference-source",
+      "bytes": 71567,
+      "sha256": "B2CD026CF5BB93541D6B0F92E1E2A506DA778632ECA274327231C8AF955F5ADB",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "v4.test.js",
+      "package_relative_path": "snapshot/v4.test.js",
+      "role": "offline-test",
+      "bytes": 18146,
+      "sha256": "3C3934FBEE67E946F37F5D482B3E39DE454088A2965162E9F2AE9FE1A551279B",
+      "evidence_class": "test assertions, not live server verification",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "v6.txt",
+      "package_relative_path": "snapshot/v6.txt",
+      "role": "user-designated-V6-base",
+      "bytes": 67852,
+      "sha256": "48383BB3991DC5C6CD5DA246292C6EA9CC5807741068E517F71F2DDF178CBE66",
+      "evidence_class": "original source; internally labelled CENTRALITY V4",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "web/app.js",
+      "package_relative_path": "snapshot/web/app.js",
+      "role": "reference-source",
+      "bytes": 11823,
+      "sha256": "C13F27DB1F6DC1AED0A24C61BBE0FB9C1C2E6670745E402AB5C54A1A244BD47D",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "web/gnat-client.js",
+      "package_relative_path": "snapshot/web/gnat-client.js",
+      "role": "reference-source",
+      "bytes": 3193,
+      "sha256": "6B3428B817CA053BD5755FC6B6187C379975AE365B57B160D5C790DDF1C47159",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "web/index.html",
+      "package_relative_path": "snapshot/web/index.html",
+      "role": "reference-source",
+      "bytes": 9219,
+      "sha256": "9DB1B4C6B64DD5A51ADDE5949AACB3CFE2F370917D749EBE49B7FF1C759D4C06",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "web/map.js",
+      "package_relative_path": "snapshot/web/map.js",
+      "role": "reference-source",
+      "bytes": 11751,
+      "sha256": "74F0E0E10545DC748261C04A8F5F0BA38D21ECDC41A49D47F1D89EB1E3B775D1",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    },
+    {
+      "source_relative_path": "web/styles.css",
+      "package_relative_path": "snapshot/web/styles.css",
+      "role": "reference-source",
+      "bytes": 6218,
+      "sha256": "D03E262178F52AF61B25B6424B5F2D992C15943E01A65EE2123BC9A2B86A0068",
+      "evidence_class": "existing implementation, not proof of live GNAT integration",
+      "privacy": "private handoff; real asset IDs/codes may be present; public release needs review",
+      "copied_unchanged": true
+    }
+  ]
+}
