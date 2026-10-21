@@ -8,7 +8,7 @@ const script = fs.readFileSync(path.join(root, 'centrality_v9.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
 test('la extensión V9 está configurada y su JS compila', () => {
-  assert.equal(manifest.version, '9.1.0');
+  assert.equal(manifest.version, '9.2.0');
   assert.deepEqual(manifest.permissions.sort(), ['activeTab','scripting']);
   assert.equal(new vm.Script(script).constructor.name, 'Script');
   assert.match(fs.readFileSync(path.join(root, 'background.js'), 'utf8'), /centrality_v9\.js/);
@@ -50,4 +50,13 @@ test('la lista aparece bajo la búsqueda y se filtra por texto visible', () => {
   assert.match(script, /controles\.insertBefore\(lista,barraFiltros\)/);
   assert.match(script, /const visibles = puntosFiltrados\(\);/);
   assert.match(script, /busqueda\.addEventListener\("input", \(\) => \{\s*reconstruirLista\(\)/);
+});
+
+test('la planilla avanzada conserva zonas, ingreso masivo y catálogo de aperturas', () => {
+  assert.match(script, /function construirEditorExcel\(\)/);
+  assert.match(script, /function abrirEditorV8\(\)/);
+  assert.match(script, /Planilla Recorrido/);
+  assert.match(script, /Ingreso Masivo/);
+  assert.match(script, /Catálogo Aperturas/);
+  assert.match(script, /excelBorrador/);
 });

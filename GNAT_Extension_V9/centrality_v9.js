@@ -1,5 +1,5 @@
 /*
- * CENTRALITY V9.1 - PLANILLA / SUPERVISORES / ZONAS / MAPA
+ * CENTRALITY V9.2 - V9.1 + EDITOR EXCEL AVANZADO
  * Ejecutar en la consola del navegador con el mapa de Centrality abierto.
  * Lee archivos locales. No envia archivos ni cambia datos de Centrality.
  * Los colores y filtros se guardan en el proyecto JSON; CSV solo guarda las categorias.
@@ -182,7 +182,9 @@
               codigo: String(f.get('codigo') ?? f.get('nombre') ?? f.get('name') ?? 'Sin código'),
               bloque: String(f.get('bloque') || 'Sin asignar'),
               colorPersonalizado: String(f.get('colorPersonalizado') || ''),
-              tipoEquipo: String(f.get('tipoEquipo') || '')});
+              tipoEquipo: String(f.get('tipoEquipo') || ''),
+              supervisorNombre: String(f.get('supervisorNombre') || ''),
+              fechaPlanificacion: String(f.get('fechaPlanificacion') || '')});
           }
         }
         if (layer.getLayers) visitarAnteriores(layer.getLayers());
@@ -225,6 +227,8 @@
     }
   }
   let puntos = [];
+  // Persists unlocated Excel rows and mass-assignment worksheets without inventing coordinates.
+  let excelBorrador = null;
   // El código del bloque es estable (B1, B2...). Su nombre es solo descriptivo.
   const definicionesBloques = new Map();
   // Estilos de planificación independientes de la cartografía GNAT.
@@ -1162,12 +1166,14 @@
       return {id:String(f.get('id')),numero:Number(f.get('numero')),tipo:f.get('tipo')||'PUNTO',
         codigo:String(f.get('codigo')||''),longitud,latitud,supervisorColor:f.get('bloque')||SIN_BLOQUE,
         bloqueId:String(f.get('bloqueId')||''),bloques:bloquesDe(f),aperturasIds:f.get('aperturasIds')||[],
-        colorPersonalizado:String(f.get('colorPersonalizado')||''),tipoEquipo:String(f.get('tipoEquipo')||'')};
+        colorPersonalizado:String(f.get('colorPersonalizado')||''),tipoEquipo:String(f.get('tipoEquipo')||''),
+        supervisorNombre:String(f.get('supervisorNombre')||''),fechaPlanificacion:String(f.get('fechaPlanificacion')||'')};
     });
     const proyecto = {version:4,formato:'CentralityLocal',
       bloques:[...definicionesBloques].map(([id,nombre],i)=>({id,nombre,
         color:coloresBloques.get(id)||colorBloqueDefault(i),responsable:responsablesBloques.get(id)||''})),
-      coloresSupervisores:{...COLORES},visiblesSupervisores:[...visiblesSupervisores],registros};
+      coloresSupervisores:{...COLORES},visiblesSupervisores:[...visiblesSupervisores],registros,
+      ...(excelBorrador?{excelBorrador}:{} )};
     descargarTexto('centrality-proyecto.json',JSON.stringify(proyecto,null,2), 'application/json;charset=utf-8');
     mensaje(`Proyecto guardado: ${registros.length} registros y ${proyecto.bloques.length} bloques.`);
   });
@@ -1215,7 +1221,8 @@
       const filasRuta = data.registros.filter(r => r.tipo === 'PUNTO').map(r => ({
         id:r.id,numero:r.numero,subestacion:r.codigo,longitud:r.longitud,latitud:r.latitud,
         supervisorColor:r.supervisorColor,bloqueId:r.bloqueId || '',aperturasIds:r.aperturasIds||[],
-        colorPersonalizado:r.colorPersonalizado||''
+        colorPersonalizado:r.colorPersonalizado||'',
+        supervisorNombre:r.supervisorNombre||'',fechaPlanificacion:r.fechaPlanificacion||''
       }));
       const filasApertura = data.registros.filter(r => r.tipo === 'APERTURA').map(r => ({
         id:r.id,numero:r.numero,codigo:r.codigo,longitud:r.longitud,latitud:r.latitud,
@@ -1231,13 +1238,16 @@
         throw Error("Referencias a aperturas inexistentes en " + r.id);
       if (!ol.proj?.fromLonLat) throw Error("Conversión de coordenadas no disponible.");
       const features = [...ruta.map(r=>({...r,tipo:'PUNTO',codigo:r.subestacion,
-        colorPersonalizado:filasRuta.find(v=>v.id===r.id)?.colorPersonalizado||''})),
+        colorPersonalizado:filasRuta.find(v=>v.id===r.id)?.colorPersonalizado||'',
+        supervisorNombre:filasRuta.find(v=>v.id===r.id)?.supervisorNombre||'',
+        fechaPlanificacion:filasRuta.find(v=>v.id===r.id)?.fechaPlanificacion||''})),
         ...aperturas.map(r=>({...r,tipo:'APERTURA',
         tipoEquipo:filasApertura.find(v=>v.id===r.id)?.tipoEquipo||''}))].map(r=>new ol.Feature({
           geometry:new ol.geom.Point(ol.proj.fromLonLat([r.longitud,r.latitud],map.getView().getProjection())),
           id:r.id,numero:r.numero,tipo:r.tipo,codigo:r.codigo,bloque:r.supervisorColor,
           bloqueId:r.bloqueId||'',bloques:r.bloques||[],aperturasIds:r.aperturasIds||[],
-          colorPersonalizado:r.colorPersonalizado||'',tipoEquipo:r.tipoEquipo||''
+          colorPersonalizado:r.colorPersonalizado||'',tipoEquipo:r.tipoEquipo||'',
+          supervisorNombre:r.supervisorNombre||'',fechaPlanificacion:r.fechaPlanificacion||''
         }));
       // No reemplazar ningún dato de trabajo hasta validar todo el proyecto.
       retirarCapa();
@@ -1261,6 +1271,10 @@
       visiblesSupervisores.clear();
       visiblesProyecto.forEach(b=>visiblesSupervisores.add(b));
       for (const b of OPCIONES_BLOQUE) filtrosCategoria.get(b).check.checked = visiblesSupervisores.has(b);
+      excelBorrador=(data.excelBorrador?.version===1 &&
+        Array.isArray(data.excelBorrador.recorrido) && Array.isArray(data.excelBorrador.aperturas) &&
+        data.excelBorrador.recorrido.length<=50000 && data.excelBorrador.aperturas.length<=50000)
+        ? data.excelBorrador : null;
       puntos=features;
       capa=new ol.layer.Vector({source:new ol.source.Vector({features}),zIndex:100000,style:estiloPunto});
       map.addLayer(capa);
@@ -1849,7 +1863,7 @@
 
   // V9: visualizador compacto. La planilla contiene la gestión; el atlas no se ofrece
   // mientras no esté validado. Mantenerlo en código permite recuperar V8 sin pérdida.
-  tituloTexto.textContent = "Centrality · Mapa V9.1";
+  tituloTexto.textContent = "Centrality · Mapa V9.2";
   panel.style.width = "340px";
   panel.style.padding = "10px";
   panel.style.maxHeight = "min(85vh,750px)";
@@ -1896,6 +1910,7 @@
     });
     tituloTexto.style.display = oculto ? "none" : "";
     abrirPlanillaBtn.style.display = oculto ? "none" : "";
+    abrirExcelBtn.style.display = oculto ? "none" : "";
     cargarKMZBtn.style.display = oculto ? "none" : "";
     cerrarRapido.style.display = oculto ? "none" : "";
     titulo.style.marginBottom = oculto ? "0" : "8px";
@@ -1973,7 +1988,8 @@
         codigo:String(f.get('codigo')||''),longitud:String(longitud),latitud:String(latitud),
         supervisorColor:categoriaSupervisor(f),bloqueId:String(f.get('bloqueId')||''),
         bloques:editorTexto(f.get('bloques')),aperturasIds:editorTexto(f.get('aperturasIds')),
-        colorPersonalizado:String(f.get('colorPersonalizado')||''),tipoEquipo:String(f.get('tipoEquipo')||'')});
+        colorPersonalizado:String(f.get('colorPersonalizado')||''),tipoEquipo:String(f.get('tipoEquipo')||''),
+        supervisorNombre:String(f.get('supervisorNombre')||''),fechaPlanificacion:String(f.get('fechaPlanificacion')||'')});
     }
     editorBloques=[...definicionesBloques].map(([id,nombre],i)=>({id,nombre,
       responsable:responsablesBloques.get(id)||'',color:coloresBloques.get(id)||colorBloqueDefault(i)}));
@@ -2021,7 +2037,8 @@
       if (kind==='APERTURA' && bloques.some(id=>!bIds.has(id))) throw Error('Bloque de apertura inexistente en '+codigo);
       return {id,numero,codigo,longitud:longitude,latitud:latitude,supervisorColor,bloqueId,
         bloques,aperturasIds: editorSeparar(r.aperturasIds),tipo:kind,
-        colorPersonalizado, tipoEquipo:String(r.tipoEquipo||'').trim().slice(0,100)};
+        colorPersonalizado, tipoEquipo:String(r.tipoEquipo||'').trim().slice(0,100),
+        supervisorNombre:String(r.supervisorNombre||''),fechaPlanificacion:String(r.fechaPlanificacion||'')};
     });
     const aperturas=validate('APERTURA',editorFilas.APERTURA);
     const rutas=validate('PUNTO',editorFilas.PUNTO);
@@ -2052,13 +2069,15 @@
         geometry:new ol.geom.Point(ol.proj.fromLonLat([r.longitud,r.latitud],map.getView().getProjection())),
         id:r.id,numero:r.numero,tipo:r.tipo,codigo:r.codigo,bloque:r.supervisorColor,
         bloqueId:r.bloqueId,bloques:r.bloques,aperturasIds:r.aperturasIds,
-        colorPersonalizado:r.colorPersonalizado||'',tipoEquipo:r.tipoEquipo||''
+        colorPersonalizado:r.colorPersonalizado||'',tipoEquipo:r.tipoEquipo||'',
+        supervisorNombre:r.supervisorNombre||'',fechaPlanificacion:r.fechaPlanificacion||''
       }));
       const nuevaCapa = new ol.layer.Vector({source:new ol.source.Vector({features:nuevas}),zIndex:100000,style:estiloPunto});
       const oldCapa=capa;
       map.addLayer(nuevaCapa);
       if (oldCapa) map.removeLayer(oldCapa);
       puntos=nuevas; capa=nuevaCapa;
+      excelBorrador=null; // zone changes become authoritative; reopen Excel for a fresh snapshot.
       definicionesBloques.clear();
       for(const b of editorBloques) {
         definicionesBloques.set(b.id,b.nombre);
@@ -2384,6 +2403,1518 @@
   }
   abrirPlanillaBtn.addEventListener('click',abrirEditorV8);
 
+  function construirEditorExcel() {
+  // ============================================================================
+  // PLANILLA ESTILO EXCEL REAL (Con Traducción de IDs JSON, Rango 2D y Normalización)
+  // ============================================================================
+  let editorVentana = null;
+  let editorDocumento = null;
+  let activeSheet = "RECORRIDO"; // "RECORRIDO" | "MASIVO" | "APERTURAS"
+  let filtroTexto = "";
+
+  // Estado de selección de rango 2D estilo Excel
+  let selStart = { r: 0, c: 0 };
+  let selEnd = { r: 0, c: 0 };
+  let isSelecting = false;
+  let isFilling = false;
+  let editingCell = null;
+
+  // Estado de las 3 hojas
+  let sheetRecorrido = [];
+  let sheetAperturas = [];
+  let sheetMasivo = {
+    zona: "D1",
+    supervisor: "",
+    filas: Array.from({ length: 35 }, () => ({ subestacion: "", apertura: "" }))
+  };
+
+  const PALETA_ZONAS = ["#198754", "#ef8b16", "#2469d8", "#8b5cf6", "#0d9488", "#be185d", "#d97706", "#0284c7"];
+
+  const fmtComma = (val) => {
+    if (val === undefined || val === null || String(val).trim() === "") return "";
+    const n = Number(String(val).trim().replace(",", "."));
+    return Number.isFinite(n) ? String(n).replace(".", ",") : String(val);
+  };
+
+  const parseCoord = (val, maxAbs) => {
+    const raw = String(val ?? "").trim().replace(",", ".");
+    if (!raw) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || Math.abs(n) > maxAbs) return null;
+    return n;
+  };
+
+  // Extrae el número real de desconexión desde el nombre del bloque ("DESC 1, 2 aperturas" -> "1") o desde su ID ("D1" -> "1")
+  const extraerNumeroDesc = (bloqueId) => {
+    const id = String(bloqueId ?? "").trim().replace(/^-->\s*/i, "");
+    if (!id) return "";
+    const nombre = String(definicionesBloques.get(id) || "").trim();
+    const matchNombre = /DESC(?:ONEXI[OÓ]N)?\s*[:#.-]?\s*(\d+)/i.exec(nombre);
+    if (matchNombre) return matchNombre[1];
+    const matchId = /^[DB](\d+)$/i.exec(id);
+    if (matchId) return matchId[1];
+    return id;
+  };
+
+  const normDescToZoneId = (desc) => {
+    const clean = String(desc ?? "").trim().replace(/^-->\s*/i, "");
+    if (!clean) return "";
+    const m = /^D?(\d+)$/i.exec(clean);
+    return m ? "D" + m[1] : clean;
+  };
+
+  function contarAperturasFila(r) {
+    const count = [r.ap1, r.ap2, r.ap3, r.ap4].map(x => String(x || "").trim()).filter(Boolean).length;
+    return count > 0 ? String(count) : "";
+  }
+
+  function rangoNormalizado(a = selStart, b = selEnd) {
+    return {
+      minR: Math.min(a.r, b.r),
+      maxR: Math.max(a.r, b.r),
+      minC: Math.min(a.c, b.c),
+      maxC: Math.max(a.c, b.c)
+    };
+  }
+
+  // Lee los puntos y aperturas del mapa/JSON traduciendo IDs a códigos visibles
+  function sincronizarDesdeMapa() {
+    if (!ol.proj?.toLonLat) throw Error("No hay conversión geográfica disponible.");
+    // Borradores incluyen puntos sin coordenadas, que no se pueden dibujar aún.
+    if (excelBorrador?.version === 1 && Array.isArray(excelBorrador.recorrido) &&
+        Array.isArray(excelBorrador.aperturas) && excelBorrador.recorrido.length <= 50000 &&
+        excelBorrador.aperturas.length <= 50000) {
+      sheetRecorrido = excelBorrador.recorrido.map(r=>({...r}));
+      sheetAperturas = excelBorrador.aperturas.map(r=>({...r}));
+      if (excelBorrador.masivo?.filas && Array.isArray(excelBorrador.masivo.filas)) {
+        sheetMasivo = {zona:String(excelBorrador.masivo.zona||'D1'),
+          supervisor:String(excelBorrador.masivo.supervisor||''),
+          filas:excelBorrador.masivo.filas.slice(0,50000).map(r=>({...r}))};
+      }
+      return;
+    }
+    const openingIndex = new Map();
+    const codeIndex = new Map();
+    for (const f of puntos) {
+      if (f.get('tipo') !== 'APERTURA') continue;
+      const code = puntoCodigo(f).trim();
+      openingIndex.set(String(f.get('id')),code);
+      const key=code.toUpperCase();
+      codeIndex.set(key,(codeIndex.get(key)||0)+1);
+    }
+    sheetAperturas=[]; sheetRecorrido=[];
+    for (const f of puntos) {
+      const [lon,lat]=ol.proj.toLonLat(f.getGeometry().getCoordinates(),map.getView().getProjection());
+      const id=String(f.get('id'));
+      if (f.get('tipo') === 'APERTURA') {
+        sheetAperturas.push({__id:id,codigo:puntoCodigo(f),latitud:fmtComma(lat),longitud:fmtComma(lon)});
+      } else {
+        const refs=Array.isArray(f.get('aperturasIds'))?f.get('aperturasIds'):[];
+        // Preserve every original reference, including the ones beyond four columns.
+        const translate=id=>openingIndex.get(String(id))||String(id);
+        const r={__id:id,numero:String(f.get('numero')||''),
+          supervisor:String(f.get('supervisorNombre')||categoriaSupervisor(f)),
+          subestacion:puntoCodigo(f),latitud:fmtComma(lat),longitud:fmtComma(lon),
+          ap1:translate(refs[0]||''),ap2:translate(refs[1]||''),
+          ap3:translate(refs[2]||''),ap4:translate(refs[3]||''),
+          __originalRefs:refs.slice(0,4),__extraRefs:refs.slice(4),
+          nDesc:String(f.get('bloqueId')||''),nAperturas:'',
+          fecha:String(f.get('fechaPlanificacion')||'')};
+        r.nAperturas=contarAperturasFila(r);
+        sheetRecorrido.push(r);
+      }
+    }
+    if (!sheetRecorrido.length) sheetRecorrido=Array.from({length:30},(_,i)=>({numero:String(i+1),supervisor:'',subestacion:'',latitud:'',longitud:'',ap1:'',ap2:'',ap3:'',ap4:'',nDesc:'',nAperturas:'',fecha:''}));
+    if (!sheetAperturas.length) sheetAperturas=Array.from({length:25},()=>({codigo:'',latitud:'',longitud:''}));
+  }
+
+  // Normaliza códigos, IDs ("p-001", "a-001") y numeración hacia el mapa y para exportación JSON
+  function guardarBorradorExcel() {
+    // JSON is the source of truth: preserve incomplete rows and pasted lists.
+    excelBorrador={version:1,
+      recorrido:sheetRecorrido.map(x=>({...x})),
+      aperturas:sheetAperturas.map(x=>({...x})),
+      masivo:{zona:sheetMasivo.zona,supervisor:sheetMasivo.supervisor,
+        filas:sheetMasivo.filas.map(x=>({...x}))}};
+  }
+
+  function sincronizarHaciaMapa(reRender = false) {
+    try {
+      if (!abierto || !map?.getView || !ol.proj?.fromLonLat) throw Error('El mapa no está disponible.');
+      guardarBorradorExcel();
+      const oldById=new Map(puntos.map(f=>[String(f.get('id')),f]));
+      const newById=new Map();
+      let pendientes=0;
+      const usedIds=new Set(oldById.keys());
+      const newId=(prefix)=>{let i=1;while(usedIds.has(prefix+i))i++;const id=prefix+i;usedIds.add(id);return id;};
+      const codeIndex=new Map();
+      const openingRefs=new Map();
+      for (const f of puntos) {
+        if (f.get('tipo')!=='APERTURA') continue;
+        const key=String(f.get('codigo')||'').trim().toUpperCase();
+        if (!codeIndex.has(key)) codeIndex.set(key,[]);
+        codeIndex.get(key).push(String(f.get('id')));
+      }
+      const project=(f, row, kind)=>{
+        const code=String(kind==='PUNTO'?row.subestacion:row.codigo||'').trim();
+        if (!code) return false;
+        const lat=parseCoord(row.latitud,90), lon=parseCoord(row.longitud,180);
+        if (lat===null || lon===null) {pendientes++;return false;}
+        if (!f && !row.__id) row.__id=newId(kind==='PUNTO'?'p-excel-':'a-excel-');
+        const id=String(row.__id||'');
+        if (oldById.has(id) && oldById.get(id).get('tipo')!==kind) throw Error('Tipo incompatible para '+code);
+        if (newById.has(id)) throw Error('ID duplicado en planilla: '+id);
+        const props=f?{...f.getProperties()}:{id,numero:0,tipo:kind,bloque:SIN_BLOQUE,
+          aperturasIds:[],bloques:[],bloqueId:'',colorPersonalizado:'',tipoEquipo:''};
+        props.geometry=new ol.geom.Point(ol.proj.fromLonLat([lon,lat],map.getView().getProjection()));
+        props.codigo=code;
+        if (kind==='PUNTO') {
+          const n=Number(row.numero);
+          if (Number.isSafeInteger(n)&&n>0)props.numero=n;
+          props.supervisorNombre=String(row.supervisor||'').trim();
+          const alias=props.supervisorNombre;
+          if (OPCIONES_BLOQUE.includes(alias)) props.bloque=alias;
+          // The supervisor category from GNAT/JSON is authoritative; never force Naranjo.
+          props.bloqueId=normDescToZoneId(row.nDesc);
+          props.fechaPlanificacion=String(row.fecha||'');
+          const ids=[];
+          for (let i=0;i<4;i++){
+            const text=String(row['ap'+(i+1)]||'').trim();
+            if (!text) continue;
+            const oldRef=Array.isArray(row.__originalRefs)?row.__originalRefs[i]:null;
+            const candidates=codeIndex.get(text.toUpperCase())||[];
+            const unchanged=oldRef&&oldById.has(String(oldRef))&&
+              String(oldById.get(String(oldRef)).get('codigo')||'').trim().toUpperCase()===text.toUpperCase();
+            const ref=unchanged?String(oldRef):candidates.length===1?candidates[0]:'';
+            if (!ref) {pendientes++;continue;}
+            if (!ids.includes(ref))ids.push(ref);
+          }
+          for(const ref of row.__extraRefs||[])if(oldById.has(String(ref))&&!ids.includes(String(ref)))ids.push(String(ref));
+          props.aperturasIds=ids;
+          // Zone name/color/responsible are not recreated from the table.
+          const zid=props.bloqueId;
+          if(zid&&!definicionesBloques.has(zid)){
+            definicionesBloques.set(zid,'Desconexión '+zid.replace(/^D/i,''));
+            coloresBloques.set(zid,colorBloqueDefault(definicionesBloques.size-1));
+          }
+        } else {
+          // Opening appearance, type, manual zone links remain untouched.
+          if(!props.numero) props.numero=1;
+        }
+        const feature=new ol.Feature(props);
+        newById.set(id,feature);
+        return true;
+      };
+      // Resolve existing opening identities first; new codes get unique IDs.
+      for(const row of sheetAperturas){
+        const code=String(row.codigo||'').trim();
+        if(!code)continue;
+        const original=row.__id?oldById.get(String(row.__id)):null;
+        if (!original && !row.__id && (codeIndex.get(code.toUpperCase())||[]).length===1) {
+          row.__id=codeIndex.get(code.toUpperCase())[0];
+        }
+        if(project(original||oldById.get(String(row.__id)),row,'APERTURA')){
+          const key=code.toUpperCase();const arr=codeIndex.get(key)||[];
+          if(!arr.includes(String(row.__id)))arr.push(String(row.__id));
+          codeIndex.set(key,arr);
+        }
+      }
+      for(const row of sheetRecorrido){
+        if(!String(row.subestacion||'').trim())continue;
+        const original=row.__id?oldById.get(String(row.__id)):null;
+        project(original,row,'PUNTO');
+      }
+      // Never silently remove an original feature because a row was incomplete/cleared.
+      for(const [id,feature] of oldById)if(!newById.has(id))newById.set(id,feature);
+      const updated=[...newById.values()];
+      const capaNueva=new ol.layer.Vector({source:new ol.source.Vector({features:updated}),zIndex:100000,style:estiloPunto});
+      map.addLayer(capaNueva);
+      if(capa)map.removeLayer(capa);
+      puntos=updated;capa=capaNueva;
+      seleccionado.clear();enfocado=-1;
+      refrescarVista();
+      guardarBorradorExcel();
+      const note=pendientes?` · ${pendientes} dato(s) pendientes (guardados en JSON)`:' ';
+      const msg=`Planilla sincronizada: ${updated.length} objetos`+note;
+      mensaje(msg);setExcelStatus(msg,Boolean(pendientes));
+      if(reRender)renderExcelGrid();
+      return true;
+    }catch(err){setExcelStatus('No se aplicaron cambios: '+err.message,true);return false;}
+  }
+
+  function ejecutarAsociacionMasiva() {
+    const descNum = extraerNumeroDesc(sheetMasivo.zona || "D1");
+    if (!descNum) {
+      setExcelStatus("Indica un código de zona válido (ej. D1 o 1).", true);
+      return;
+    }
+
+    const subCodigos = sheetMasivo.filas.map(f => String(f.subestacion || "").trim()).filter(Boolean);
+    const apCodigos = [...new Set(sheetMasivo.filas.map(f => String(f.apertura || "").trim()).filter(Boolean))];
+
+    if (!subCodigos.length) {
+      setExcelStatus("Pega al menos un código de subestación en la columna A.", true);
+      return;
+    }
+
+    if (apCodigos.length > 4) {
+      setExcelStatus('Hay más de 4 aperturas; esta vista tiene 4 columnas. Revisa en Zonas antes de asociar.',true);
+      return;
+    }
+    let actualizados = 0, creados = 0;
+    sheetRecorrido = sheetRecorrido.filter(r =>
+      String(r.subestacion || r.latitud || r.longitud || r.ap1 || "").trim() !== ""
+    );
+
+    for (const codSub of subCodigos) {
+      const existentes = sheetRecorrido.filter(
+        r => String(r.subestacion || "").trim().toUpperCase() === codSub.toUpperCase()
+      );
+      if (existentes.length > 0) {
+        for (const fila of existentes) {
+          if (!fila.supervisor && sheetMasivo.supervisor) fila.supervisor = sheetMasivo.supervisor;
+          fila.ap1 = apCodigos[0] || "";
+          fila.ap2 = apCodigos[1] || "";
+          fila.ap3 = apCodigos[2] || "";
+          fila.ap4 = apCodigos[3] || "";
+          fila.nDesc = descNum;
+          fila.nAperturas = contarAperturasFila(fila);
+          actualizados++;
+        }
+      } else {
+        const nextNum = 1 + Math.max(0, ...sheetRecorrido.map(r => Number(r.numero) || 0));
+        const nueva = {
+          numero: String(nextNum),
+          supervisor: sheetMasivo.supervisor || "",
+          subestacion: codSub,
+          latitud: "", longitud: "",
+          ap1: apCodigos[0] || "", ap2: apCodigos[1] || "", ap3: apCodigos[2] || "", ap4: apCodigos[3] || "",
+          nDesc: descNum, nAperturas: "", fecha: ""
+        };
+        nueva.nAperturas = contarAperturasFila(nueva);
+        sheetRecorrido.push(nueva);
+        creados++;
+      }
+    }
+
+    for (const apCod of apCodigos) {
+      const existeAp = sheetAperturas.some(a => String(a.codigo || "").trim().toUpperCase() === apCod.toUpperCase());
+      if (!existeAp) {
+        const filaVacia = sheetAperturas.find(a => !String(a.codigo || "").trim());
+        if (filaVacia) filaVacia.codigo = apCod;
+        else sheetAperturas.push({ codigo: apCod, latitud: "", longitud: "" });
+      }
+    }
+
+    sincronizarHaciaMapa(false);
+    activeSheet = "RECORRIDO";
+    selStart = { r: 0, c: 0 };
+    selEnd = { r: 0, c: 0 };
+    renderExcelGrid();
+    setExcelStatus(
+      `Zona DESC ${descNum} asociada: ${actualizados} subestación(es) actualizada(s)` +
+      (creados ? `, ${creados} nueva(s)` : "") +
+      ` con ${apCodigos.length} apertura(s).`
+    );
+  }
+
+  function setExcelStatus(text, isError = false) {
+    if (!editorDocumento || editorVentana?.closed) return;
+    const st = editorDocumento.getElementById("excelStatus");
+    if (st) {
+      st.textContent = text;
+      st.style.color = isError ? "#b42318" : "#1e3a5f";
+      st.style.fontWeight = isError ? "bold" : "normal";
+    }
+  }
+
+  const DEFINICION_HOJAS = {
+    RECORRIDO: {
+      letras: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+      columnas: [
+        { key: "numero", title: "N°", width: "52px", align: "center" },
+        { key: "supervisor", title: "Supervisor", width: "130px", align: "left", style: "supervisor" },
+        { key: "subestacion", title: "Subestación", width: "105px", align: "center" },
+        { key: "latitud", title: "Latitud", width: "95px", align: "right" },
+        { key: "longitud", title: "Longitud", width: "95px", align: "right" },
+        { key: "ap1", title: "Apertura 1", width: "100px", align: "center", isLink: true },
+        { key: "ap2", title: "Apertura 2", width: "100px", align: "center", isLink: true },
+        { key: "ap3", title: "Apertura 3", width: "100px", align: "center", isLink: true },
+        { key: "ap4", title: "Apertura 4", width: "100px", align: "center", isLink: true },
+        { key: "nDesc", title: "N° DESC", width: "80px", align: "center" },
+        { key: "nAperturas", title: "N° Aperturas", width: "95px", align: "center", readonly: true },
+        { key: "fecha", title: "Fecha planificación", width: "135px", align: "center" }
+      ]
+    },
+    APERTURAS: {
+      letras: ["A", "B", "C", "D"],
+      columnas: [
+        { key: "codigo", title: "Código", width: "120px", align: "center" },
+        { key: "latitud", title: "Latitud", width: "130px", align: "right" },
+        { key: "longitud", title: "Longitud", width: "130px", align: "right" }
+      ]
+    }
+  };
+
+  function leerValorCelda(r, c) {
+    if (activeSheet === "MASIVO") {
+      if (c === 0) return sheetMasivo.filas[r]?.subestacion ?? "";
+      if (c === 3 && r >= 1) return sheetMasivo.filas[r - 1]?.apertura ?? "";
+      return "";
+    }
+    const config = DEFINICION_HOJAS[activeSheet];
+    const datos = activeSheet === "RECORRIDO" ? sheetRecorrido : sheetAperturas;
+    const col = config.columnas[c];
+    if (!col || !datos[r]) return "";
+    return datos[r][col.key] ?? "";
+  }
+
+  function escribirValorCelda(r, c, val) {
+    if (activeSheet === "MASIVO") {
+      while (r >= sheetMasivo.filas.length) {
+        sheetMasivo.filas.push({ subestacion: "", apertura: "" });
+      }
+      if (c === 0) {
+        sheetMasivo.filas[r].subestacion = val;
+      } else if (c === 3 && r >= 1) {
+        while (r - 1 >= sheetMasivo.filas.length) {
+          sheetMasivo.filas.push({ subestacion: "", apertura: "" });
+        }
+        sheetMasivo.filas[r - 1].apertura = val;
+      }
+      const inp = editorDocumento?.querySelector(`input.excel-input[data-r="${r}"][data-c="${c}"]`);
+      if (inp) inp.value = val;
+      return;
+    }
+
+    const config = DEFINICION_HOJAS[activeSheet];
+    const datos = activeSheet === "RECORRIDO" ? sheetRecorrido : sheetAperturas;
+    const col = config.columnas[c];
+    if (!col || col.readonly) return;
+
+    while (r >= datos.length) {
+      if (activeSheet === "RECORRIDO") {
+        datos.push({
+          numero: String(datos.length + 1), supervisor: "", subestacion: "",
+          latitud: "", longitud: "", ap1: "", ap2: "", ap3: "", ap4: "",
+          nDesc: "", nAperturas: "", fecha: ""
+        });
+      } else {
+        datos.push({ codigo: "", latitud: "", longitud: "" });
+      }
+    }
+
+    datos[r][col.key] = val;
+    const inp = editorDocumento?.querySelector(`input.excel-input[data-r="${r}"][data-c="${c}"]`);
+    if (inp) {
+      inp.value = val;
+      const td = inp.closest("td.excel-cell");
+      if (col.style === "supervisor" && td) {
+        td.classList.toggle("cell-supervisor", Boolean(String(val).trim()));
+      }
+    }
+
+    if (activeSheet === "RECORRIDO" && ["ap1", "ap2", "ap3", "ap4"].includes(col.key)) {
+      datos[r].nAperturas = contarAperturasFila(datos[r]);
+      const inpCount = editorDocumento?.querySelector(`input.excel-input[data-r="${r}"][data-key="nAperturas"]`);
+      if (inpCount) inpCount.value = datos[r].nAperturas;
+    }
+  }
+
+  function pintarRecuadroSeleccion() {
+    if (!editorDocumento || editorVentana?.closed) return;
+    const { minR, maxR, minC, maxC } = rangoNormalizado();
+
+    editorDocumento.querySelectorAll("td.excel-cell").forEach(td => {
+      td.classList.remove("sel-in", "sel-anchor", "sel-top", "sel-bottom", "sel-left", "sel-right", "sel-handle");
+    });
+    editorDocumento.querySelectorAll(".hdr-active").forEach(el => el.classList.remove("hdr-active"));
+
+    for (let c = minC; c <= maxC; c++) {
+      editorDocumento.querySelector(`.excel-col-letters th[data-col="${c}"]`)?.classList.add("hdr-active");
+    }
+    for (let r = minR; r <= maxR; r++) {
+      editorDocumento.querySelector(`td.excel-row-num[data-row="${r}"]`)?.classList.add("hdr-active");
+    }
+
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const td = editorDocumento.querySelector(`td.excel-cell[data-r="${r}"][data-c="${c}"]`);
+        if (!td) continue;
+        if (r === selStart.r && c === selStart.c) td.classList.add("sel-anchor");
+        else td.classList.add("sel-in");
+        if (r === minR) td.classList.add("sel-top");
+        if (r === maxR) td.classList.add("sel-bottom");
+        if (c === minC) td.classList.add("sel-left");
+        if (c === maxC) td.classList.add("sel-right");
+        if (r === maxR && c === maxC) td.classList.add("sel-handle");
+      }
+    }
+
+    const nameBox = editorDocumento.getElementById("excelNameBox");
+    const fxInput = editorDocumento.getElementById("excelFxInput");
+    const c1 = String.fromCharCode(65 + minC) + (minR + 2);
+    const c2 = String.fromCharCode(65 + maxC) + (maxR + 2);
+    if (nameBox) {
+      nameBox.textContent = (minR === maxR && minC === maxC) ? c1 : `${c1}:${c2}`;
+    }
+
+    const anchorVal = leerValorCelda(selStart.r, selStart.c);
+    if (fxInput && editorDocumento.activeElement !== fxInput) {
+      const colCfg = DEFINICION_HOJAS[activeSheet]?.columnas?.[selStart.c];
+      if (colCfg?.isLink && anchorVal) {
+        const idxAp = sheetAperturas.findIndex(
+          a => String(a.codigo || "").trim().toUpperCase() === String(anchorVal).trim().toUpperCase()
+        );
+        fxInput.value = `=HIPERVINCULO("#gid=APERTURAS&range=A${idxAp >= 0 ? idxAp + 2 : 2}"; "${anchorVal}")`;
+      } else {
+        fxInput.value = anchorVal;
+      }
+    }
+  }
+
+  function activarModoEdicionCelda(r, c, seleccionarTodo = false) {
+    editingCell = { r, c };
+    const inp = editorDocumento?.querySelector(`input.excel-input[data-r="${r}"][data-c="${c}"]`);
+    if (!inp || inp.readOnly) return;
+    inp.classList.add("editing");
+    inp.focus();
+    if (seleccionarTodo) inp.select();
+    else {
+      const len = inp.value.length;
+      inp.setSelectionRange(len, len);
+    }
+  }
+
+  function salirModoEdicionCelda() {
+    if (!editingCell || !editorDocumento) return;
+    const inp = editorDocumento.querySelector(`input.excel-input.editing`);
+    if (inp) inp.classList.remove("editing");
+    editingCell = null;
+  }
+
+  function renderExcelGrid() {
+    if (!editorDocumento || editorVentana?.closed) return;
+    const container = editorDocumento.getElementById("excelSheetContainer");
+    if (!container) return;
+    container.replaceChildren();
+    editingCell = null;
+
+    editorDocumento.querySelectorAll(".sheet-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.sheet === activeSheet);
+    });
+
+    if (activeSheet === "MASIVO") {
+      renderHojaMasiva(container);
+      pintarRecuadroSeleccion();
+      return;
+    }
+
+    const config = DEFINICION_HOJAS[activeSheet];
+    const datos = activeSheet === "RECORRIDO" ? sheetRecorrido : sheetAperturas;
+
+    const minFilas = activeSheet === "RECORRIDO" ? 30 : 22;
+    while (datos.length < minFilas) {
+      if (activeSheet === "RECORRIDO") {
+        datos.push({
+          numero: String(datos.length + 1), supervisor: "", subestacion: "",
+          latitud: "", longitud: "", ap1: "", ap2: "", ap3: "", ap4: "",
+          nDesc: "", nAperturas: "", fecha: ""
+        });
+      } else {
+        datos.push({ codigo: "", latitud: "", longitud: "" });
+      }
+    }
+
+    const table = editorDocumento.createElement("table");
+    table.className = "excel-table";
+
+    const thead = editorDocumento.createElement("thead");
+    const trLetters = editorDocumento.createElement("tr");
+    trLetters.className = "excel-col-letters";
+    const thCorner = editorDocumento.createElement("th");
+    thCorner.className = "excel-row-num corner";
+    thCorner.textContent = "◢";
+    thCorner.onclick = () => {
+      selStart = { r: 0, c: 0 };
+      selEnd = { r: datos.length - 1, c: config.columnas.length - 1 };
+      pintarRecuadroSeleccion();
+    };
+    trLetters.appendChild(thCorner);
+
+    config.columnas.forEach((col, cIdx) => {
+      const th = editorDocumento.createElement("th");
+      th.style.width = col.width;
+      th.dataset.col = String(cIdx);
+      th.textContent = config.letras[cIdx] || String.fromCharCode(65 + cIdx);
+      th.onclick = (ev) => {
+        if (ev.shiftKey) selEnd = { r: datos.length - 1, c: cIdx };
+        else { selStart = { r: 0, c: cIdx }; selEnd = { r: datos.length - 1, c: cIdx }; }
+        pintarRecuadroSeleccion();
+      };
+      trLetters.appendChild(th);
+    });
+    const thMapLetter = editorDocumento.createElement("th");
+    thMapLetter.style.width = "46px";
+    thMapLetter.textContent = config.letras[config.columnas.length] || "";
+    trLetters.appendChild(thMapLetter);
+    thead.appendChild(trLetters);
+
+    const trHeader = editorDocumento.createElement("tr");
+    trHeader.className = "excel-dark-header";
+    const thRow1 = editorDocumento.createElement("th");
+    thRow1.className = "excel-row-num";
+    thRow1.textContent = "1";
+    trHeader.appendChild(thRow1);
+
+    config.columnas.forEach(col => {
+      const th = editorDocumento.createElement("th");
+      th.innerHTML = `<div class="hdr-flex"><span>${col.title}</span><span class="filter-icon">⏷</span></div>`;
+      trHeader.appendChild(th);
+    });
+    const thAction = editorDocumento.createElement("th");
+    thAction.innerHTML = `<div class="hdr-flex"><span>Mapa</span></div>`;
+    trHeader.appendChild(thAction);
+    thead.appendChild(trHeader);
+    table.appendChild(thead);
+
+    const tbody = editorDocumento.createElement("tbody");
+    const q = filtroTexto.trim().toLowerCase();
+
+    datos.forEach((fila, rIdx) => {
+      if (q && !Object.values(fila).join(" ").toLowerCase().includes(q)) return;
+
+      const tr = editorDocumento.createElement("tr");
+      const tdNum = editorDocumento.createElement("td");
+      tdNum.className = "excel-row-num";
+      tdNum.dataset.row = String(rIdx);
+      tdNum.textContent = String(rIdx + 2);
+      tdNum.onclick = (ev) => {
+        if (ev.shiftKey) selEnd = { r: rIdx, c: config.columnas.length - 1 };
+        else { selStart = { r: rIdx, c: 0 }; selEnd = { r: rIdx, c: config.columnas.length - 1 }; }
+        pintarRecuadroSeleccion();
+      };
+      tr.appendChild(tdNum);
+
+      config.columnas.forEach((col, cIdx) => {
+        const td = editorDocumento.createElement("td");
+        td.className = "excel-cell";
+        td.dataset.r = String(rIdx);
+        td.dataset.c = String(cIdx);
+        if (col.style === "supervisor" && String(fila[col.key] || "").trim()) {
+          td.classList.add("cell-supervisor");
+        }
+
+        const input = editorDocumento.createElement("input");
+        input.type = "text";
+        input.className = "excel-input";
+        input.style.textAlign = col.align || "left";
+        input.readOnly = Boolean(col.readonly);
+        input.value = fila[col.key] ?? "";
+        input.dataset.r = String(rIdx);
+        input.dataset.c = String(cIdx);
+        input.dataset.key = col.key;
+
+        input.addEventListener("input", () => {
+          escribirValorCelda(rIdx, cIdx, input.value);
+        });
+        input.addEventListener("change", () => {
+          sincronizarHaciaMapa(false);
+        });
+
+        const handle = editorDocumento.createElement("div");
+        handle.className = "fill-handle";
+        handle.title = "Arrastrar para rellenar celdas";
+        handle.addEventListener("mousedown", (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          salirModoEdicionCelda();
+          isFilling = true;
+        });
+
+        td.appendChild(input);
+        td.appendChild(handle);
+        tr.appendChild(td);
+      });
+
+      const tdGo = editorDocumento.createElement("td");
+      tdGo.className = "excel-cell-action";
+      const btnGo = editorDocumento.createElement("button");
+      btnGo.type = "button";
+      btnGo.className = "btn-map-pin";
+      btnGo.textContent = "📍";
+      btnGo.title = "Centrar este código en el mapa";
+      btnGo.onclick = () => {
+        sincronizarHaciaMapa(false);
+        const codeBuscado = String(activeSheet === "RECORRIDO" ? fila.subestacion : fila.codigo).trim();
+        if (!codeBuscado) return;
+        const idxMapa = puntos.findIndex(f => puntoCodigo(f).toUpperCase() === codeBuscado.toUpperCase());
+        if (idxMapa >= 0) { navegar(idxMapa); w.focus(); }
+      };
+      tdGo.appendChild(btnGo);
+      tr.appendChild(tdGo);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+    pintarRecuadroSeleccion();
+  }
+
+  function renderHojaMasiva(container) {
+    const table = editorDocumento.createElement("table");
+    table.className = "excel-table masivo-table";
+
+    const thead = editorDocumento.createElement("thead");
+    const trLetters = editorDocumento.createElement("tr");
+    trLetters.className = "excel-col-letters";
+    ["◢", "A", "B", "C", "D"].forEach((L, idx) => {
+      const th = editorDocumento.createElement("th");
+      if (idx === 0) th.className = "excel-row-num corner";
+      else th.dataset.col = String(idx - 1);
+      th.style.width = idx === 0 ? "38px" : idx === 1 ? "250px" : idx === 2 ? "125px" : idx === 3 ? "135px" : "180px";
+      th.textContent = L;
+      trLetters.appendChild(th);
+    });
+    thead.appendChild(trLetters);
+    table.appendChild(thead);
+
+    const tbody = editorDocumento.createElement("tbody");
+
+    const tr1 = editorDocumento.createElement("tr");
+    tr1.innerHTML = `<td class="excel-row-num">1</td>`;
+
+    const tdBlueLeft = editorDocumento.createElement("td");
+    tdBlueLeft.className = "masivo-blue-header";
+    tdBlueLeft.textContent = "Ingresar cods. zona desconectada";
+    tr1.appendChild(tdBlueLeft);
+
+    const tdZone = editorDocumento.createElement("td");
+    tdZone.className = "excel-cell";
+    const inpZone = editorDocumento.createElement("input");
+    inpZone.type = "text";
+    inpZone.className = "excel-input editing";
+    inpZone.style.fontWeight = "bold";
+    inpZone.value = "-->D" + extraerNumeroDesc(sheetMasivo.zona || "D1");
+    inpZone.addEventListener("input", () => {
+      sheetMasivo.zona = inpZone.value.replace(/^-->\s*/i, "").trim() || "D1";
+    });
+    tdZone.appendChild(inpZone);
+    tr1.appendChild(tdZone);
+
+    const tdSupLabel = editorDocumento.createElement("td");
+    tdSupLabel.className = "excel-cell";
+    tdSupLabel.style.textAlign = "right";
+    tdSupLabel.style.paddingRight = "6px";
+    tdSupLabel.style.fontWeight = "bold";
+    tdSupLabel.textContent = "Supervisor:";
+    tr1.appendChild(tdSupLabel);
+
+    const tdSup = editorDocumento.createElement("td");
+    tdSup.className = "excel-cell cell-supervisor";
+    const inpSup = editorDocumento.createElement("input");
+    inpSup.type = "text";
+    inpSup.className = "excel-input editing";
+    inpSup.value = sheetMasivo.supervisor || "";
+    inpSup.addEventListener("input", () => { sheetMasivo.supervisor = inpSup.value; });
+    tdSup.appendChild(inpSup);
+    tr1.appendChild(tdSup);
+    tbody.appendChild(tr1);
+
+    sheetMasivo.filas.forEach((par, rIdx) => {
+      const rowNumber = rIdx + 2;
+      const tr = editorDocumento.createElement("tr");
+
+      const tdN = editorDocumento.createElement("td");
+      tdN.className = "excel-row-num";
+      tdN.dataset.row = String(rIdx);
+      tdN.textContent = String(rowNumber);
+      tr.appendChild(tdN);
+
+      const tdSub = editorDocumento.createElement("td");
+      tdSub.className = "excel-cell";
+      tdSub.dataset.r = String(rIdx);
+      tdSub.dataset.c = "0";
+      const inpSub = editorDocumento.createElement("input");
+      inpSub.type = "text";
+      inpSub.className = "excel-input";
+      inpSub.value = par.subestacion || "";
+      inpSub.dataset.r = String(rIdx);
+      inpSub.dataset.c = "0";
+      inpSub.addEventListener("input", () => { par.subestacion = inpSub.value; });
+      const handleA = editorDocumento.createElement("div");
+      handleA.className = "fill-handle";
+      tdSub.appendChild(inpSub);
+      tdSub.appendChild(handleA);
+      tr.appendChild(tdSub);
+
+      const tdSep = editorDocumento.createElement("td");
+      tdSep.className = "excel-cell";
+      tdSep.dataset.r = String(rIdx);
+      tdSep.dataset.c = "1";
+      tr.appendChild(tdSep);
+
+      const tdArrow = editorDocumento.createElement("td");
+      tdArrow.className = "excel-cell";
+      tdArrow.style.textAlign = "center";
+      if (rowNumber === 6) {
+        const btnRun = editorDocumento.createElement("button");
+        btnRun.type = "button";
+        btnRun.className = "btn-masivo-arrow";
+        btnRun.textContent = "---> Asociar";
+        btnRun.onclick = ejecutarAsociacionMasiva;
+        tdArrow.appendChild(btnRun);
+      } else if (rowNumber === 8) {
+        const btnClear = editorDocumento.createElement("button");
+        btnClear.type = "button";
+        btnClear.className = "btn-masivo-clear";
+        btnClear.textContent = "Limpiar listas";
+        btnClear.onclick = () => {
+          sheetMasivo.filas.forEach(f => { f.subestacion = ""; f.apertura = ""; });
+          renderExcelGrid();
+        };
+        tdArrow.appendChild(btnClear);
+      }
+      tr.appendChild(tdArrow);
+
+      if (rowNumber === 2) {
+        const tdBlueRight = editorDocumento.createElement("td");
+        tdBlueRight.className = "masivo-blue-header";
+        tdBlueRight.style.textAlign = "center";
+        tdBlueRight.textContent = "COD apertura";
+        tr.appendChild(tdBlueRight);
+      } else {
+        const apIndex = rIdx - 1;
+        const tdAp = editorDocumento.createElement("td");
+        tdAp.className = "excel-cell";
+        tdAp.dataset.r = String(rIdx);
+        tdAp.dataset.c = "3";
+        const inpAp = editorDocumento.createElement("input");
+        inpAp.type = "text";
+        inpAp.className = "excel-input";
+        inpAp.style.textAlign = "center";
+        inpAp.value = sheetMasivo.filas[apIndex]?.apertura || "";
+        inpAp.dataset.r = String(rIdx);
+        inpAp.dataset.c = "3";
+        inpAp.addEventListener("input", () => {
+          if (sheetMasivo.filas[apIndex]) sheetMasivo.filas[apIndex].apertura = inpAp.value;
+        });
+        const handleD = editorDocumento.createElement("div");
+        handleD.className = "fill-handle";
+        tdAp.appendChild(inpAp);
+        tdAp.appendChild(handleD);
+        tr.appendChild(tdAp);
+      }
+
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+
+  function copiarRangoSeleccionado(ev) {
+    if (editingCell) return;
+    const { minR, maxR, minC, maxC } = rangoNormalizado();
+    const filasTexto = [];
+
+    editorDocumento?.querySelectorAll("td.excel-cell.copied-cell").forEach(el => el.classList.remove("copied-cell"));
+
+    for (let r = minR; r <= maxR; r++) {
+      const filaArr = [];
+      for (let c = minC; c <= maxC; c++) {
+        filaArr.push(leerValorCelda(r, c));
+        editorDocumento?.querySelector(`td.excel-cell[data-r="${r}"][data-c="${c}"]`)?.classList.add("copied-cell");
+      }
+      filasTexto.push(filaArr.join("\t"));
+    }
+
+    const textoPlano = filasTexto.join("\r\n");
+    if (ev?.clipboardData) {
+      ev.preventDefault();
+      ev.clipboardData.setData("text/plain", textoPlano);
+    } else {
+      editorVentana?.navigator?.clipboard?.writeText?.(textoPlano).catch(() => {});
+    }
+    setExcelStatus(`Copiado rango de ${maxR - minR + 1} fila(s) × ${maxC - minC + 1} columna(s).`);
+  }
+
+  function manejarPegadoExcel(ev) {
+    const clip = ev.clipboardData?.getData("text/plain");
+    if (!clip) return;
+    if (editingCell && !clip.includes("\n") && !clip.includes("\t")) return;
+
+    ev.preventDefault();
+    salirModoEdicionCelda();
+
+    const matrix = clip
+      .replace(/\r\n?/g, "\n")
+      .replace(/\n$/, "")
+      .split("\n")
+      .map(line => line.split("\t").map(c => c.trim()));
+
+    const { minR, maxR, minC, maxC } = rangoNormalizado();
+    const selH = maxR - minR + 1;
+    const selW = maxC - minC + 1;
+
+    const targetRows = (matrix.length === 1 && selH > 1) ? selH : matrix.length;
+    const targetCols = (matrix[0].length === 1 && selW > 1) ? selW : matrix[0].length;
+
+    const totalExistentes = activeSheet === "MASIVO"
+      ? sheetMasivo.filas.length
+      : (activeSheet === "RECORRIDO" ? sheetRecorrido.length : sheetAperturas.length);
+    const necesitaMasFilas = (minR + targetRows) > totalExistentes;
+
+    for (let rOff = 0; rOff < targetRows; rOff++) {
+      const srcRow = matrix[rOff % matrix.length];
+      for (let cOff = 0; cOff < targetCols; cOff++) {
+        const val = srcRow[cOff % srcRow.length];
+        escribirValorCelda(minR + rOff, minC + cOff, val);
+      }
+    }
+
+    selStart = { r: minR, c: minC };
+    selEnd = { r: minR + targetRows - 1, c: minC + targetCols - 1 };
+
+    if (necesitaMasFilas) renderExcelGrid();
+    else pintarRecuadroSeleccion();
+
+    if (activeSheet !== "MASIVO") sincronizarHaciaMapa(false);
+    setExcelStatus(`Pegadas ${targetRows} fila(s) × ${targetCols} columna(s).`);
+  }
+
+  function borrarRangoSeleccionado() {
+    const { minR, maxR, minC, maxC } = rangoNormalizado();
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        escribirValorCelda(r, c, "");
+      }
+    }
+    pintarRecuadroSeleccion();
+    if (activeSheet !== "MASIVO") sincronizarHaciaMapa(false);
+    setExcelStatus("Vaciadas celdas del rango seleccionado.");
+  }
+
+  function exportarExcelCSV() {
+    const q = v => {
+      const s = String(v ?? "");
+      return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    if (activeSheet === "APERTURAS") {
+      const headers = ["Código", "Latitud", "Longitud"];
+      const rows = sheetAperturas
+        .filter(a => String(a.codigo || "").trim())
+        .map(a => [a.codigo, fmtComma(a.latitud), fmtComma(a.longitud)]);
+      const csv = [headers.join(";"), ...rows.map(r => r.map(q).join(";"))].join("\r\n");
+      descargarTexto("catalogo_aperturas.csv", "\ufeff" + csv, "text/csv;charset=utf-8");
+    } else {
+      const headers = [
+        "N°", "Supervisor", "Subestación", "Latitud", "Longitud",
+        "Apertura 1", "Apertura 2", "Apertura 3", "Apertura 4",
+        "N° DESC", "N° Aperturas", "Fecha planificación"
+      ];
+      const rows = sheetRecorrido
+        .filter(r => String(r.subestacion || r.latitud || r.longitud || "").trim())
+        .map(r => [
+          r.numero, r.supervisor, r.subestacion, fmtComma(r.latitud), fmtComma(r.longitud),
+          r.ap1, r.ap2, r.ap3, r.ap4, r.nDesc, contarAperturasFila(r), r.fecha
+        ]);
+      const csv = [headers.join(";"), ...rows.map(r => r.map(q).join(";"))].join("\r\n");
+      descargarTexto("planilla_recorrido.csv", "\ufeff" + csv, "text/csv;charset=utf-8");
+    }
+  }
+
+  // Si se carga un proyecto JSON o un KMZ estando la ventana Excel abierta, refrescar automáticamente
+  archivoProyecto.addEventListener("change", () => {
+    w.setTimeout(() => {
+      if (editorVentana && !editorVentana.closed) {
+        sincronizarDesdeMapa();
+        renderExcelGrid();
+        setExcelStatus("Proyecto JSON cargado: códigos de apertura y N° DESC traducidos automáticamente.");
+      }
+    }, 250);
+  });
+
+  function abrirEditorExcel() {
+    if (editorVentana && !editorVentana.closed) {
+      editorVentana.focus();
+      return;
+    }
+    try {
+      sincronizarDesdeMapa();
+    } catch (err) {
+      return mensaje("No se pudo abrir la planilla Excel: " + err.message, true);
+    }
+
+    editorVentana = window.open("", "centrality-excel-v9", "width=1480,height=860,resizable=yes,scrollbars=yes");
+    if (!editorVentana) {
+      return mensaje("Chrome bloqueó la ventana emergente. Permite popups para este sitio.", true);
+    }
+
+    editorDocumento = editorVentana.document;
+    editorDocumento.open();
+    editorDocumento.write(`<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Planilla de Desconexiones · GNAT Excel</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 12px Calibri, "Segoe UI", Arial, sans-serif;
+    background: #ffffff;
+    color: #111827;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+  .excel-ribbon {
+    background: #107c41;
+    color: #fff;
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .excel-ribbon-left { display: flex; align-items: center; gap: 8px; }
+  .excel-title { font-weight: 700; font-size: 14px; margin-right: 10px; }
+  .ribbon-btn {
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 3px;
+    padding: 4px 10px;
+    font: 12px "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+  }
+  .ribbon-btn:hover { background: rgba(255,255,255,0.26); }
+  .ribbon-btn.primary { background: #ffffff; color: #107c41; font-weight: 700; }
+  .excel-formula-bar {
+    display: flex;
+    align-items: center;
+    background: #f3f2f1;
+    border-bottom: 1px solid #d2d0ce;
+    padding: 3px 8px;
+    gap: 6px;
+  }
+  #excelNameBox {
+    min-width: 72px;
+    background: #fff;
+    border: 1px solid #c8c6c4;
+    padding: 2px 6px;
+    text-align: center;
+    font-weight: 600;
+    color: #323130;
+  }
+  .fx-symbol {
+    font-family: Georgia, serif;
+    font-style: italic;
+    font-weight: bold;
+    color: #605e5c;
+    padding: 0 6px;
+  }
+  #excelFxInput {
+    flex: 1;
+    border: 1px solid #c8c6c4;
+    padding: 3px 8px;
+    font: 12px Consolas, monospace;
+    background: #fff;
+    user-select: text;
+  }
+  #excelSearch {
+    width: 210px;
+    border: 1px solid #c8c6c4;
+    padding: 3px 8px;
+    background: #fff;
+    user-select: text;
+  }
+  #excelSheetContainer {
+    flex: 1;
+    overflow: auto;
+    background: #fff;
+    outline: none;
+  }
+  .excel-table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: max-content;
+    min-width: 100%;
+    cursor: cell;
+  }
+  .excel-col-letters th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #e8f5e9;
+    color: #1f2937;
+    font-weight: 600;
+    font-size: 11px;
+    height: 22px;
+    border: 1px solid #b6c4b8;
+    text-align: center;
+    cursor: pointer;
+  }
+  .excel-col-letters th.hdr-active,
+  .excel-row-num.hdr-active {
+    background: #bbdefb !important;
+    color: #0d47a1 !important;
+    font-weight: 700;
+  }
+  .excel-dark-header th {
+    position: sticky;
+    top: 22px;
+    z-index: 3;
+    background: #10253f;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 12px;
+    height: 30px;
+    padding: 2px 6px;
+    border: 1px solid #2c4360;
+    white-space: nowrap;
+  }
+  .hdr-flex { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .filter-icon { font-size: 10px; color: #93c5fd; opacity: 0.85; }
+  .excel-row-num {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    width: 38px;
+    background: #e8f5e9 !important;
+    color: #374151 !important;
+    font-weight: 600;
+    font-size: 11px;
+    text-align: center;
+    border: 1px solid #b6c4b8;
+    cursor: pointer;
+  }
+  .excel-row-num.corner { z-index: 5; color: #6b7280 !important; }
+  .excel-cell {
+    border: 1px solid #d4d4d4;
+    padding: 0;
+    height: 23px;
+    background: #ffffff;
+    position: relative;
+  }
+  .excel-cell.cell-supervisor { background: #f9d8b6; }
+  .excel-cell.cell-supervisor .excel-input { color: #b45309; font-weight: 600; }
+
+  .excel-cell.sel-in { background-color: rgba(26, 115, 232, 0.14) !important; }
+  .excel-cell.sel-anchor { background-color: #ffffff !important; }
+  .excel-cell.cell-supervisor.sel-anchor { background-color: #fde6cc !important; }
+  .excel-cell.sel-top { border-top: 2px solid #1a73e8 !important; }
+  .excel-cell.sel-bottom { border-bottom: 2px solid #1a73e8 !important; }
+  .excel-cell.sel-left { border-left: 2px solid #1a73e8 !important; }
+  .excel-cell.sel-right { border-right: 2px solid #1a73e8 !important; }
+
+  .excel-cell.copied-cell {
+    outline: 1.5px dashed #107c41;
+    outline-offset: -2px;
+  }
+
+  .fill-handle {
+    display: none;
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 7px;
+    height: 7px;
+    background: #1a73e8;
+    border: 1px solid #ffffff;
+    cursor: crosshair;
+    z-index: 6;
+  }
+  .excel-cell.sel-handle .fill-handle { display: block; }
+
+  .excel-input {
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: none;
+    padding: 2px 5px;
+    font: 12px Calibri, "Segoe UI", Arial, sans-serif;
+    background: transparent;
+    color: #111827;
+    pointer-events: none;
+  }
+  .excel-input.editing {
+    pointer-events: auto;
+    background: #ffffff;
+    cursor: text;
+    user-select: text;
+  }
+
+  .excel-cell-action {
+    border: 1px solid #d4d4d4;
+    text-align: center;
+    padding: 0;
+    background: #f9fafb;
+  }
+  .btn-map-pin {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    width: 100%;
+    height: 22px;
+  }
+  .btn-map-pin:hover { background: #e0f2fe; }
+  .masivo-blue-header {
+    background: #2f75b5;
+    color: #000000;
+    font-weight: 600;
+    padding: 3px 6px;
+    border: 1px solid #1e4e79;
+    height: 24px;
+  }
+  .btn-masivo-arrow {
+    background: #10253f;
+    color: #fff;
+    font-weight: bold;
+    border: 1px solid #0a192f;
+    border-radius: 3px;
+    padding: 2px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .btn-masivo-arrow:hover { background: #1e3a8a; }
+  .btn-masivo-clear {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .excel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f3f2f1;
+    border-top: 1px solid #c8c6c4;
+    height: 30px;
+    padding: 0 10px;
+  }
+  .sheet-tabs { display: flex; align-items: flex-end; height: 100%; gap: 2px; }
+  .sheet-tab {
+    background: #e1dfdd;
+    border: 1px solid #c8c6c4;
+    border-top: none;
+    padding: 5px 14px;
+    font: 12px "Segoe UI", Arial, sans-serif;
+    cursor: pointer;
+    color: #323130;
+  }
+  .sheet-tab.active {
+    background: #ffffff;
+    color: #107c41;
+    font-weight: 700;
+    border-bottom: 3px solid #107c41;
+  }
+  #excelStatus {
+    font-size: 11px;
+    color: #1e3a5f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
+</head>
+<body>
+  <div class="excel-ribbon">
+    <div class="excel-ribbon-left">
+      <span class="excel-title">📊 Centrality · Libro de Desconexiones</span>
+      <button type="button" class="ribbon-btn primary" id="btnSyncMap">Aplicar y Sincronizar Mapa</button>
+      <button type="button" class="ribbon-btn" id="btnAddRows">+ 15 Filas</button>
+      <button type="button" class="ribbon-btn" id="btnExportCSV">Exportar Hoja CSV</button>
+      <button type="button" class="ribbon-btn" id="btnSaveJSON">Guardar JSON Limpio</button>
+      <button type="button" class="ribbon-btn" id="btnLoadJSON">Abrir JSON</button>
+    </div>
+    <div>
+      <button type="button" class="ribbon-btn" id="btnReloadFromMap">Recargar desde Mapa</button>
+    </div>
+  </div>
+
+  <div class="excel-formula-bar">
+    <div id="excelNameBox">A2</div>
+    <span class="fx-symbol">fx</span>
+    <input type="text" id="excelFxInput" placeholder="Selecciona un rango arrastrando el mouse, o edita aquí...">
+    <input type="search" id="excelSearch" placeholder="Filtrar código o supervisor...">
+  </div>
+
+  <div id="excelSheetContainer" tabindex="0"></div>
+
+  <div class="excel-footer">
+    <div class="sheet-tabs">
+      <button type="button" class="sheet-tab active" data-sheet="RECORRIDO">Planilla Recorrido</button>
+      <button type="button" class="sheet-tab" data-sheet="MASIVO">Ingreso Masivo (Zonas -->D1)</button>
+      <button type="button" class="sheet-tab" data-sheet="APERTURAS">Catálogo Aperturas</button>
+    </div>
+    <div id="excelStatus">Códigos de apertura y N° DESC sincronizados. Arrastra para seleccionar rango · Ctrl+C / Ctrl+V / Supr.</div>
+  </div>
+</body>
+</html>`);
+    editorDocumento.close();
+
+    const container = editorDocumento.getElementById("excelSheetContainer");
+    const fxInput = editorDocumento.getElementById("excelFxInput");
+
+    fxInput.addEventListener("input", () => {
+      if (fxInput.value.startsWith("=HIPERVINCULO")) return;
+      escribirValorCelda(selStart.r, selStart.c, fxInput.value);
+    });
+    fxInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        sincronizarHaciaMapa(false);
+        container.focus();
+      }
+    });
+
+    container.addEventListener("mousedown", (ev) => {
+      const td = ev.target.closest("td.excel-cell[data-r][data-c]");
+      if (!td) return;
+      const r = Number(td.dataset.r);
+      const c = Number(td.dataset.c);
+
+      if (editingCell && editingCell.r === r && editingCell.c === c) return;
+
+      ev.preventDefault();
+      salirModoEdicionCelda();
+      container.focus();
+
+      if (ev.shiftKey) {
+        selEnd = { r, c };
+      } else {
+        selStart = { r, c };
+        selEnd = { r, c };
+      }
+      isSelecting = true;
+      pintarRecuadroSeleccion();
+    });
+
+    container.addEventListener("mouseover", (ev) => {
+      if (!isSelecting && !isFilling) return;
+      const td = ev.target.closest("td.excel-cell[data-r][data-c]");
+      if (!td) return;
+      const r = Number(td.dataset.r);
+      const c = Number(td.dataset.c);
+      if (selEnd.r !== r || selEnd.c !== c) {
+        selEnd = { r, c };
+        pintarRecuadroSeleccion();
+      }
+    });
+
+    editorDocumento.addEventListener("mouseup", () => {
+      if (isFilling) {
+        isFilling = false;
+        const baseVal = leerValorCelda(selStart.r, selStart.c);
+        const { minR, maxR, minC, maxC } = rangoNormalizado();
+        for (let r = minR; r <= maxR; r++) {
+          for (let c = minC; c <= maxC; c++) {
+            escribirValorCelda(r, c, baseVal);
+          }
+        }
+        pintarRecuadroSeleccion();
+        if (activeSheet !== "MASIVO") sincronizarHaciaMapa(false);
+      }
+      isSelecting = false;
+    });
+
+    container.addEventListener("dblclick", (ev) => {
+      const td = ev.target.closest("td.excel-cell[data-r][data-c]");
+      if (!td) return;
+      const r = Number(td.dataset.r);
+      const c = Number(td.dataset.c);
+      const colCfg = DEFINICION_HOJAS[activeSheet]?.columnas?.[c];
+      const val = String(leerValorCelda(r, c) || "").trim();
+
+      if (colCfg?.isLink && val && ev.ctrlKey) {
+        const apIdx = sheetAperturas.findIndex(a => String(a.codigo || "").trim().toUpperCase() === val.toUpperCase());
+        if (apIdx >= 0) {
+          activeSheet = "APERTURAS";
+          selStart = { r: apIdx, c: 0 };
+          selEnd = { r: apIdx, c: 0 };
+          renderExcelGrid();
+          return;
+        }
+      }
+      activarModoEdicionCelda(r, c, false);
+    });
+
+    editorDocumento.addEventListener("keydown", (ev) => {
+      const tag = ev.target?.tagName;
+      if (ev.target?.id === "excelSearch" || ev.target?.id === "excelFxInput") return;
+
+      if (editingCell) {
+        if (ev.key === "Escape") {
+          ev.preventDefault();
+          salirModoEdicionCelda();
+          container.focus();
+          pintarRecuadroSeleccion();
+        } else if (ev.key === "Enter" || ev.key === "Tab") {
+          ev.preventDefault();
+          const { r, c } = editingCell;
+          salirModoEdicionCelda();
+          sincronizarHaciaMapa(false);
+          if (ev.key === "Enter") selStart = selEnd = { r: r + 1, c };
+          else selStart = selEnd = { r, c: c + (ev.shiftKey ? -1 : 1) };
+          container.focus();
+          pintarRecuadroSeleccion();
+        }
+        return;
+      }
+
+      if (tag === "INPUT" && ev.target.classList.contains("editing")) return;
+
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "a") {
+        ev.preventDefault();
+        const maxRows = activeSheet === "MASIVO" ? sheetMasivo.filas.length - 1 :
+          (activeSheet === "RECORRIDO" ? sheetRecorrido.length - 1 : sheetAperturas.length - 1);
+        const maxCols = activeSheet === "MASIVO" ? 3 : DEFINICION_HOJAS[activeSheet].columnas.length - 1;
+        selStart = { r: 0, c: 0 };
+        selEnd = { r: maxRows, c: maxCols };
+        pintarRecuadroSeleccion();
+        return;
+      }
+
+      if (ev.key === "Delete" || ev.key === "Backspace") {
+        ev.preventDefault();
+        borrarRangoSeleccionado();
+        return;
+      }
+
+      if (ev.key === "F2") {
+        ev.preventDefault();
+        activarModoEdicionCelda(selStart.r, selStart.c, false);
+        return;
+      }
+
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        selStart = selEnd = { r: selStart.r + (ev.shiftKey ? -1 : 1), c: selStart.c };
+        pintarRecuadroSeleccion();
+        return;
+      }
+
+      if (ev.key === "Tab") {
+        ev.preventDefault();
+        selStart = selEnd = { r: selStart.r, c: Math.max(0, selStart.c + (ev.shiftKey ? -1 : 1)) };
+        pintarRecuadroSeleccion();
+        return;
+      }
+
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(ev.key)) {
+        ev.preventDefault();
+        const dR = ev.key === "ArrowDown" ? 1 : ev.key === "ArrowUp" ? -1 : 0;
+        const dC = ev.key === "ArrowRight" ? 1 : ev.key === "ArrowLeft" ? -1 : 0;
+        if (ev.shiftKey) {
+          selEnd = { r: Math.max(0, selEnd.r + dR), c: Math.max(0, selEnd.c + dC) };
+        } else {
+          const next = { r: Math.max(0, selStart.r + dR), c: Math.max(0, selStart.c + dC) };
+          selStart = next;
+          selEnd = next;
+        }
+        pintarRecuadroSeleccion();
+        const activeTd = editorDocumento.querySelector(`td.excel-cell[data-r="${selEnd.r}"][data-c="${selEnd.c}"]`);
+        activeTd?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
+
+      if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        escribirValorCelda(selStart.r, selStart.c, "");
+        activarModoEdicionCelda(selStart.r, selStart.c, false);
+      }
+    });
+
+    editorDocumento.addEventListener("copy", copiarRangoSeleccionado);
+    editorDocumento.addEventListener("paste", manejarPegadoExcel);
+
+    editorDocumento.querySelectorAll(".sheet-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        activeSheet = btn.dataset.sheet;
+        selStart = { r: 0, c: 0 };
+        selEnd = { r: 0, c: 0 };
+        renderExcelGrid();
+        container.focus();
+      });
+    });
+
+    editorDocumento.getElementById("btnSyncMap").onclick = () => sincronizarHaciaMapa(true);
+    editorDocumento.getElementById("btnAddRows").onclick = () => {
+      if (activeSheet === "RECORRIDO") {
+        for (let i = 0; i < 15; i++) {
+          sheetRecorrido.push({
+            numero: String(sheetRecorrido.length + 1), supervisor: "", subestacion: "",
+            latitud: "", longitud: "", ap1: "", ap2: "", ap3: "", ap4: "",
+            nDesc: "", nAperturas: "", fecha: ""
+          });
+        }
+      } else if (activeSheet === "APERTURAS") {
+        for (let i = 0; i < 15; i++) sheetAperturas.push({ codigo: "", latitud: "", longitud: "" });
+      } else {
+        for (let i = 0; i < 15; i++) sheetMasivo.filas.push({ subestacion: "", apertura: "" });
+      }
+      renderExcelGrid();
+    };
+    editorDocumento.getElementById("btnExportCSV").onclick = exportarExcelCSV;
+    editorDocumento.getElementById("btnSaveJSON").onclick = () => {
+      if (sincronizarHaciaMapa(false)) guardarProyectoBtn.click();
+    };
+    editorDocumento.getElementById("btnLoadJSON").onclick = () => abrirProyectoBtn.click();
+    editorDocumento.getElementById("btnReloadFromMap").onclick = () => {
+      excelBorrador=null;
+      sincronizarDesdeMapa();
+      renderExcelGrid();
+      setExcelStatus("Datos recargados desde el mapa; borrador anterior descartado.");
+    };
+
+    const searchInput = editorDocumento.getElementById("excelSearch");
+    searchInput.addEventListener("input", () => {
+      filtroTexto = searchInput.value;
+      renderExcelGrid();
+    });
+
+    renderExcelGrid();
+    container.focus();
+    if (!oculto) ocultar.click();
+    editorVentana.focus();
+  }
+
+  return {
+    abrir:abrirEditorExcel,
+    abierta:()=>Boolean(editorVentana&&!editorVentana.closed),
+    cerrar:()=>{if(editorVentana&&!editorVentana.closed){guardarBorradorExcel();editorVentana.close();}}
+  };
+  }
+
+  const excelAvanzado=construirEditorExcel();
+  const abrirExcelBtn=btn(titulo,'Excel ↗','padding:5px 8px;font-weight:bold;background:#e9f3ff;');
+  abrirExcelBtn.title='Planilla avanzada: selección de rangos, pegado masivo y hoja de aperturas';
+  abrirPlanillaBtn.textContent='Zonas ↗';
+  abrirPlanillaBtn.title='Administrar zonas, responsables, aperturas y tipos de equipo';
+  // Two editors must not overwrite one another's changes.
+  abrirExcelBtn.onclick=()=>{
+    if(editorVentana&&!editorVentana.closed) {
+      if(!editorAplicar(true))return mensaje('Corrige cambios pendientes de Zonas antes de abrir Excel.',true);
+      editorVentana.close();
+    }
+    excelAvanzado.abrir();
+  };
+  abrirPlanillaBtn.addEventListener('click',(event)=>{
+    if(excelAvanzado.abierta()){
+      event.stopImmediatePropagation();
+      excelAvanzado.cerrar();
+      mensaje('Borrador de Excel conservado. Guarda proyecto JSON antes de cambiar de editor.');
+      // Restore the zone editor on the next click; never silently overwrite sheet edits.
+    }
+  },true);
+
   w.__superponerKMZ = { cerrar: cerrarPanel, getPuntos: () => puntos.slice(),
     getCapa: () => capa, getBloques: () => [...definicionesBloques].map(([id,nombre],i)=>({id,nombre,color:coloresBloques.get(id)||colorBloqueDefault(i),responsable:responsablesBloques.get(id)||''})),
     getPreferencias: () => ({colores:{...COLORES},visibles:[...visiblesSupervisores]}), abrirPlanilla: abrirEditorV8 };
@@ -2394,6 +3925,7 @@
       numero: a.numero,
       id: a.id, tipo: a.tipo || "PUNTO", bloqueId: a.bloqueId || "", bloques: a.bloques || [], aperturasIds:a.aperturasIds||[],
       colorPersonalizado:a.colorPersonalizado||'',tipoEquipo:a.tipoEquipo||'',
+      supervisorNombre:a.supervisorNombre||'',fechaPlanificacion:a.fechaPlanificacion||'',
       bloque: OPCIONES_BLOQUE.includes(a.bloque) ? a.bloque : SIN_BLOQUE
     }));
     capa = new ol.layer.Vector({
