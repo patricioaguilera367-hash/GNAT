@@ -126,3 +126,30 @@ por fase`, así que un parser ingenuo reiniciaba el bloque que acababa de llenar
 todas las fases volvían `null`. Corregido: un encabezado nunca reinicia un bloque
 con valores, y un bloque sin ningún valor de fase se descarta.
 
+**L8** — Tercera corrida. Muestrear el poste `F517570` devuelve el poste y dos
+tirantes: cero tramos. Muestrear el medio del tramo en
+`(-72.853019, -37.886501)` devuelve el tramo real. **U1 queda respondida:**
+
+```
+id 477763812  type "Alambre Cu Duro Des 6 AWG 1-fas MT"
+              display "F562540 - F562541"
+              title "Detalle de Cable F562540 - F562541"
+id 35144088   type "Alambre Cu Duro Des 6 AWG 1-fas BT"
+              display "F562540 - F562541"
+```
+
+Los códigos de extremo sí están en `display`. La clase (`Cable`) sólo aparece en
+el título de la ficha: `type` es el material del conductor. Por eso la
+clasificación por etiqueta fallaba y ahora se complementa con
+`get_object_definition`.
+
+Hallazgo adicional: en el mismo punto hay **dos cables apilados**, MT y BT, sobre
+el mismo par de postes. El cruce BT que se había diferido a la iteración 2 existe
+en el primer tramo medido; por eso cada tramo lleva nivel de tensión y el resumen
+lo cuenta en `spansByVoltage`.
+
+Sigue sin verificarse la geometría (`get_objects_geojson` sobre un id de cable) y
+el estado abierto/cerrado de un aparato **en MT** (sólo se observó en un DF de
+BT).
+
+

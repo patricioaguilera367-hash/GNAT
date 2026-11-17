@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.5.0";
+  const VERSION = "1.6.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -74,7 +74,10 @@
   ];
 
   /** Case-insensitive substrings that mark a span/cable object. */
-  const SPAN_HINTS = ["tramo", "cable", "linea", "línea"];
+  const SPAN_HINTS = ["tramo", "cable", "linea", "línea", "alambre", "conductor"];
+
+  /** Bound the extra ficha lookups a single point inventory may make. */
+  const MAX_TITLE_LOOKUPS = 4;
 
   /** Case-insensitive substrings that mark a state field in inert text. */
   const STATE_HINTS = [
@@ -323,6 +326,55 @@
 
     return parsed;
   };
+
+  /**
+   * Re-classify with GNAT's own ficha title.
+   *
+   * A medium voltage span reports `type: "Alambre Cu Duro Des 6 AWG 1-fas MT"`
+   * and `display: "F562540 - F562541"`. Neither string contains "cable": only
+   * the ficha title does (`Detalle de Cable F562540 - F562541`).
+   */
+  const classifyWithTitle = (item, title) => {
+    const base = classify(item);
+    const text = safeString(title).toLowerCase();
+    const byTitleSpan = /detalle de cable|detalle de tramo|detalle de conductor/.test(text);
+    const byTitleDevice = /desconectador|seccionador|reconectador|interruptor|fusible|protecci/.test(text);
+    return { ...base, isSpan: base.isSpan || byTitleSpan, isDevice: base.isDevice || byTitleDevice };
+  };
+
+  /** Voltage level a span belongs to, from its own reported type. */
+  const voltageOf = (item) => {
+    const blob = `${safeString(item && item.type)} ${safeString(item && item.display)}`.toLowerCase();
+    if (/\bmt\b/.test(blob)) return "mt";
+    if (/\bbt\b/.test(blob)) return "bt";
+    return null;
+  };
+
+  /**
+   * Ask GNAT for the class of each object and re-classify with it, in place.
+   * Bounded, because every lookup is one more request.
+   */
+  async function enrichPointObjects(api, objects) {
+    const titles = [];
+    for (const item of objects.slice(0, MAX_TITLE_LOOKUPS)) {
+      const lookup = await step(`title:${item.id}`, () => probeObjectTitle(api, item.id));
+      if (!lookup.ok) continue;
+      const title = lookup.value.title;
+      const flags = classifyWithTitle(item, title);
+      Object.assign(item, flags);
+      item.title = title;
+      item.spanVoltage = flags.isSpan ? voltageOf(item) : null;
+      titles.push({
+        ...lookup.value,
+        reportedType: item.type,
+        reportedDisplay: item.display,
+        classifiedAsSpan: flags.isSpan,
+        classifiedAsDevice: flags.isDevice,
+        spanVoltage: item.spanVoltage,
+      });
+    }
+    return titles;
+  }
 
   /** Classify an object by its reported `type` / `display`. */
   const classify = (item) => {
@@ -1000,7 +1052,12 @@
     // the next run can tell "this point has no spans" from "I misclassified".
     const objectsSample = objects
       .slice(0, 25)
-      .map((item) => ({ id: item.id, type: item.type, display: item.display }));
+      .map((item) => ({ id: item.id, type: item.type, display: item.display, spanVoltage: item.spanVoltage || null }));
+    const spansByVoltage = { mt: 0, bt: 0, unknown: 0 };
+    for (const span of spans) {
+      const level = span.spanVoltage || voltageOf(span);
+      spansByVoltage[level === "mt" || level === "bt" ? level : "unknown"] += 1;
+    }
     const typeCounts = {};
     for (const item of objects) {
       const key = safeString(item.type) || "(sin type)";
@@ -1028,6 +1085,7 @@
       twoVertexLineStrings: lineStrings.filter((feature) => feature.vertexCount === 2).length,
       deviceTypes: [...poleDevices.map((device) => device.type), ...(poleCase.searchDevices || []).map((device) => device.display)],
       spanTypes: [...new Set(spans.map((span) => span.type))],
+      spansByVoltage,
       hasStateEvidence: stateEvidence.length > 0,
       stateEvidence,
       sections,
@@ -1110,7 +1168,10 @@
     const point = await step(`point:${code}`, () => probePoint(api, chosen.lonlat.lon, chosen.lonlat.lat));
     poleCase.pointQuery = point.ok ? point.value : { error: point.error, objects: [] };
 
-    const spanIds = ((poleCase.pointQuery && poleCase.pointQuery.objects) || [])
+    const poleObjects = (poleCase.pointQuery && poleCase.pointQuery.objects) || [];
+    poleCase.objectTitles = await enrichPointObjects(api, poleObjects);
+
+    const spanIds = poleObjects
       .filter((item) => item.isSpan)
       .map((item) => toNumericId(item.id))
       .filter((id) => id !== null);
@@ -1169,7 +1230,10 @@
     );
     poleCase.pointQuery = point.ok ? point.value : { error: point.error, objects: [] };
 
-    const spanIds = ((poleCase.pointQuery && poleCase.pointQuery.objects) || [])
+    const pointObjects = (poleCase.pointQuery && poleCase.pointQuery.objects) || [];
+    poleCase.objectTitles = await enrichPointObjects(api, pointObjects);
+
+    const spanIds = pointObjects
       .filter((item) => item.isSpan)
       .map((item) => toNumericId(item.id))
       .filter((id) => id !== null);
@@ -1229,24 +1293,9 @@
     pointCase.pointQuery = point.ok ? point.value : { error: point.error, objects: [] };
 
     const objects = (pointCase.pointQuery && pointCase.pointQuery.objects) || [];
+    pointCase.objectTitles = await enrichPointObjects(api, objects);
 
-    // Ask GNAT for the class of each object instead of trusting the label-based
-    // classification: this is what tells a span apart from an accessory.
-    const objectTitles = [];
-    for (const item of objects.slice(0, 3)) {
-      const title = await step(`title:${item.id}`, () => probeObjectTitle(api, item.id));
-      if (title.ok) {
-        objectTitles.push({
-          ...title.value,
-          reportedType: item.type,
-          reportedDisplay: item.display,
-          classifiedAsSpan: item.isSpan,
-          classifiedAsDevice: item.isDevice,
-        });
-      }
-    }
-    pointCase.objectTitles = objectTitles;
-
+    // Class names come from GNAT's ficha, so a span is never guessed from a label.
     const spanIds = objects
       .filter((item) => item.isSpan)
       .map((item) => toNumericId(item.id))

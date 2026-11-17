@@ -117,7 +117,31 @@ await __gnatProbe.probeAt({ lon: -72.09, lat: -38.73 })     // explicit coordina
 Each call appends a case to the report, so `copySummary()` picks it up. This is
 the shortest path to answering U1.
 
-## Field findings that shaped versions 1.1.0 to 1.4.0
+## U1 answered: a span is a `Cable` and its `type` is a conductor
+
+Sampling the middle of an MT line returns, for one pole pair:
+
+```json
+{ "id": 477763812, "type": "Alambre Cu Duro Des 6 AWG 1-fas MT",
+  "display": "F562540 - F562541",
+  "title": "Detalle de Cable F562540 - F562541" }
+```
+
+So the two endpoint codes **are** exposed, in `display`, exactly as for AP/BT. What
+is not exposed is the word "cable" in `type`: that field carries the conductor
+material. The class only appears in the ficha title, which is why the probe now
+reads `get_object_definition` for the objects at a point and classifies with
+`title` as well as `type`/`display`.
+
+Two consequences worth remembering:
+
+- **Stacked circuits.** That same point returned an `Alambre … 1-fas MT` and an
+  `Alambre … 1-fas BT` over the same pole pair. Every span carries its voltage
+  level, and the summary counts them separately in `spansByVoltage`.
+- **A pole is the wrong sample point.** At `F517570` the point query returns the
+  pole and its guy wires. Spans live on the line between poles.
+
+## Field findings that shaped versions 1.1.0 to 1.6.0
 
 The first real run of code `F51757` produced no point query and two defects,
 both now pinned by the self-test:
@@ -162,7 +186,7 @@ Version 1.4.0 comes from the third run, which finally read `spanDiagnosis`:
 
 ```jsonc
 {
-  "probeVersion": "1.4.0",
+  "probeVersion": "1.6.0",
   "viewport": { "projection": "EPSG:3857", "zoom": 16, "usesViewportParams": true },
   "cases": [{ "code": "F51757", "resolved": {}, "pointQuery": {}, "spanGeometries": {}, "devices": [], "electricalSection": {}, "summary": {} }],
   "verdict": {

@@ -36,7 +36,26 @@ const POLE_LONLAT = [-72.812867652, -37.912094564];
 let execCommandResult = true;
 let clipboardBlocked = false;
 const fetchedUrls = [];
-const stubState = { acsElecDecodeError: false };
+const stubState = { acsElecDecodeError: false, pointObjects: null };
+
+/** Ficha titles, which is where GNAT says an object is a cable. */
+const CABLE_TITLES = {
+  477763812: "Detalle de Cable F562540 - F562541",
+  35144088: "Detalle de Cable F562540 - F562541",
+  479563245: "Detalle de Polígono de gestión M-265807 (1)",
+};
+
+/** The field shape that finally answered U1: a span whose `type` is a conductor. */
+const CABLE_OBJECTS = [
+  { id: 479563245, display: "M-265807 (1)", type: null, description: "" },
+  {
+    id: 477763812,
+    display: "F562540 - F562541",
+    type: "Alambre Cu Duro Des 6 AWG 1-fas MT",
+    description: "<table><tr><td>Alimentador</td><td>Angol-Los Sauces [S203]</td></tr></table>",
+  },
+  { id: 35144088, display: "F562540 - F562541", type: "Alambre Cu Duro Des 6 AWG 1-fas BT", description: "" },
+];
 
 /** Section 23 payload for a switching device: the real GNAT shape, trimmed. */
 const DEVICE_HTML = [
@@ -144,7 +163,7 @@ function geoJsonFor(ids) {
 
 function widgetDefinitionFor(objectId) {
   return {
-    title: `Objeto ${objectId}`,
+    title: CABLE_TITLES[objectId] || `Objeto ${objectId}`,
     message_error: null,
     widget_definition: {
       header_widgets: [{ id: 5, title: "IDs" }],
@@ -165,7 +184,7 @@ function fakeAcsRequest(options) {
     if (url === "svc_wmc.php") {
       if (params.action === "textual_search") return void success(SEARCH_CANDIDATES);
       if (params.action === "get_objects_geojson") return void success(geoJsonFor(assertNumericIds(params)));
-      if (params.action === "get_objects_info_for_point") return void success(POINT_OBJECTS);
+      if (params.action === "get_objects_info_for_point") return void success(stubState.pointObjects || POINT_OBJECTS);
       return void failure(new Error(`unexpected wmc action ${params.action}`));
     }
     if (url === "Web/component/svc_object_view.php") {
@@ -460,7 +479,7 @@ assert.equal(atCase.summary.pointFound, true);
 assert.equal(atCase.summary.spansFound, 2, "the sample point must expose its spans");
 assert.equal(atCase.summary.lineStringsReturned, 2);
 assert.equal(atCase.summary.spanDiagnosis.note, "spans classified");
-assert.equal(atCase.summary.spanDiagnosis.objectTitles.length, 3, "GNAT's own class must be read for each object");
+assert.equal(atCase.summary.spanDiagnosis.objectTitles.length, 4, "GNAT's own class must be read for each object");
 for (const entry of atCase.summary.spanDiagnosis.objectTitles) {
   assert.equal(typeof entry.title, "string");
   assert.ok(entry.title.startsWith("Objeto "), `unexpected title ${entry.title}`);
@@ -474,6 +493,24 @@ assert.ok(
 const centreCase = await probe.probeCenter("centre");
 assert.equal(plain(centreCase.resolved).geometryType, "coordinate");
 assert.equal(centreCase.code, "centre");
+
+// --- the shape that answered U1: a span whose type is a conductor ----------
+stubState.pointObjects = CABLE_OBJECTS;
+const cableCase = await probe.probeAt({ lon: -72.8530195, lat: -37.8865012 }, "cable-mt-bt");
+
+assert.equal(cableCase.summary.spansFound, 2, "both stacked cables must be classified as spans");
+assert.deepEqual(plain(cableCase.summary.spanDisplays[0].variants["space-hyphen-space"]), ["F562540", "F562541"]);
+assert.deepEqual(plain(cableCase.summary.spansByVoltage), { mt: 1, bt: 1, unknown: 0 });
+assert.equal(cableCase.summary.lineStringsReturned, 2, "each span id must resolve to a line");
+assert.equal(cableCase.summary.twoVertexLineStrings, 2);
+
+const cableTitles = cableCase.summary.spanDiagnosis.objectTitles;
+assert.equal(cableTitles[0].classifiedAsSpan, false, "a management polygon is not a span");
+assert.equal(cableTitles[1].title, "Detalle de Cable F562540 - F562541");
+assert.equal(cableTitles[1].classifiedAsSpan, true);
+assert.equal(cableTitles[1].spanVoltage, "mt");
+assert.equal(cableTitles[2].spanVoltage, "bt");
+stubState.pointObjects = null;
 
 // --- S6: copying survives an unfocused console ----------------------------
 clipboardBlocked = true;
