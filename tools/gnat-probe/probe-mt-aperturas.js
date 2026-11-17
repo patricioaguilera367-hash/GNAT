@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.6.1";
+  const VERSION = "1.7.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -46,6 +46,11 @@
   const MAX_IDS_PER_GEOJSON_CALL = 40;
   const MAX_POLE_TARGETS = 5;
   const MAX_SEARCH_DEVICES = 4;
+
+  /** Ring sampling: the cheapest way to find the cables attached to a pole. */
+  const RING_RADIUS_METERS = 20;
+  const RING_SAMPLES = 8;
+  const RING_MAX_REQUESTS = 12;
 
   const URL_WMC = "svc_wmc.php";
   const URL_OBJECT_VIEW = "Web/component/svc_object_view.php";
@@ -1373,6 +1378,149 @@
 
   const probeCenter = (label) => probeAt(null, label);
 
+  /** Metres to degrees, good enough for a ring of a few dozen metres. */
+  const offsetPoint = (lon, lat, radiusMeters, bearingRadians) => {
+    const metersPerDegreeLat = 111320;
+    const metersPerDegreeLon = metersPerDegreeLat * Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+    return {
+      lon: lon + (radiusMeters * Math.cos(bearingRadians)) / metersPerDegreeLon,
+      lat: lat + (radiusMeters * Math.sin(bearingRadians)) / metersPerDegreeLat,
+    };
+  };
+
+  /**
+   * Sample a ring around a point to find what is attached to it.
+   *
+   * No endpoint answers "what cables hang from this pole", and at a pole the
+   * point query returns only the pole and its guy wires. A thin ring around the
+   * pole does find the conductors, and each conductor's `display` already carries
+   * both pole codes, so the pair is the graph edge.
+   */
+  async function probeAround(target, options) {
+    const api = buildApi(resolveEnv());
+    const settings = options || {};
+    const center = target && typeof target.lon === "number" && typeof target.lat === "number" ? target : mapCenterLonLat(api);
+    const radius = Number(settings.radiusMeters) > 0 ? Number(settings.radiusMeters) : RING_RADIUS_METERS;
+    const sampleCount =
+      Number(settings.samples) > 0 ? Math.min(24, Math.floor(Number(settings.samples))) : RING_SAMPLES;
+
+    const seen = new Map();
+    const sampleReports = [];
+    let requests = 0;
+
+    await withProbeView(api, center.lon, center.lat, async () => {
+      for (let index = 0; index < sampleCount && requests < RING_MAX_REQUESTS; index += 1) {
+        const bearing = (2 * Math.PI * index) / sampleCount;
+        const point = offsetPoint(center.lon, center.lat, radius, bearing);
+        requests += 1;
+        try {
+          const response = await api.objectsInfoForPoint(point.lon, point.lat);
+          const rows = Array.isArray(response) ? response : [];
+          const objects = rows.map((item) => ({
+            id: item && item.id,
+            display: item && item.display,
+            type: item && item.type,
+            ...classify(item),
+            title: null,
+            spanVoltage: null,
+          }));
+          let fresh = 0;
+          for (const item of objects) {
+            const key = safeString(item.id);
+            if (seen.has(key)) continue;
+            seen.set(key, item);
+            fresh += 1;
+          }
+          sampleReports.push({
+            index,
+            bearingDegrees: Math.round((bearing * 180) / Math.PI),
+            ok: true,
+            objectsReturned: objects.length,
+            freshObjects: fresh,
+            types: objects.map((item) => item.type),
+          });
+        } catch (error) {
+          sampleReports.push({
+            index,
+            bearingDegrees: Math.round((bearing * 180) / Math.PI),
+            ok: false,
+            error: truncate(safeString(error && error.message) || preview(error), 200),
+          });
+        }
+      }
+    });
+
+    const uniqueObjects = [...seen.values()];
+    const titles = await enrichPointObjects(api, uniqueObjects);
+
+    const cables = uniqueObjects
+      .filter((item) => item.isSpan)
+      .map((item) => {
+        const endpoints = parseSpanDisplay(item.display);
+        return {
+          id: toNumericId(item.id),
+          display: item.display,
+          title: item.title || null,
+          voltage: item.spanVoltage || voltageOf(item),
+          from: endpoints.parsesCleanly ? Object.values(endpoints.variants)[0][0] : null,
+          to: endpoints.parsesCleanly ? Object.values(endpoints.variants)[0][1] : null,
+        };
+      });
+
+    const spansByVoltage = { mt: 0, bt: 0, unknown: 0 };
+    for (const cable of cables) {
+      spansByVoltage[cable.voltage === "mt" || cable.voltage === "bt" ? cable.voltage : "unknown"] += 1;
+    }
+
+    const typeCounts = {};
+    for (const item of uniqueObjects) {
+      const key = safeString(item.type) || "(sin type)";
+      typeCounts[key] = (typeCounts[key] || 0) + 1;
+    }
+
+    const code = `ring@${Number(center.lon).toFixed(6)},${Number(center.lat).toFixed(6)}`;
+    const caseEntry = {
+      code,
+      resolved: { lonlat: center, geometryType: "ring" },
+      radiusMeters: radius,
+      samples: sampleReports.length,
+      requests,
+      sampleReports,
+      cables,
+      edges: cables
+        .filter((cable) => cable.from && cable.to)
+        .map((cable) => ({ id: cable.id, voltage: cable.voltage, from: cable.from, to: cable.to })),
+      summary: {
+        code,
+        mode: "ring",
+        pointFound: true,
+        radiusMeters: radius,
+        samples: sampleReports.length,
+        requests,
+        objectsReturned: uniqueObjects.length,
+        spansFound: cables.length,
+        spansByVoltage,
+        spanTypes: [...new Set(cables.map((cable) => cable.title || cable.display))],
+        spanDisplays: cables.map((cable) => ({ display: cable.display, from: cable.from, to: cable.to, voltage: cable.voltage })),
+        hasStateEvidence: false,
+        stateEvidence: [],
+        spanDiagnosis: {
+          objectsReturned: uniqueObjects.length,
+          typeCounts,
+          objectsSample: uniqueObjects.slice(0, 25).map((item) => ({ id: item.id, type: item.type, display: item.display, spanVoltage: item.spanVoltage || null })),
+          objectTitles: titles,
+          note: cables.length > 0 ? "spans classified" : "the ring found no conductor",
+        },
+      },
+    };
+
+    report.cases.push(caseEntry);
+    report.finishedAt = new Date().toISOString();
+    console.info(`[gnatProbe] ${code}`);
+    console.info(JSON.stringify({ requests, samples: sampleReports.length, spans: cables.length, spansByVoltage, edges: caseEntry.edges }, null, 1));
+    return caseEntry;
+  }
+
   // ---------------------------------------------------------------- entrypoint
 
   async function run(input) {
@@ -1509,6 +1657,7 @@
     run,
     probeAt,
     probeCenter,
+    probeAround,
     json,
     summaryJson,
     copy,
