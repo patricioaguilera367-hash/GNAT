@@ -513,18 +513,29 @@ assert.equal(cableTitles[2].spanVoltage, "bt");
 stubState.pointObjects = null;
 
 // --- S3: the ring around a pole finds its conductors -----------------------
-stubState.pointObjects = CABLE_OBJECTS;
-const ringCase = await probe.probeAround({ lon: -72.853, lat: -37.8865 }, { samples: 8, radiusMeters: 20 });
+// The extra object's display is a pair of sector names, not pole codes.
+const RING_OBJECTS = [
+  ...CABLE_OBJECTS,
+  { id: 21244828, display: "Trintre - Colonia Miraflores", type: "Alambre Cu Duro Des 6 AWG 1-fas MT", description: "" },
+];
+stubState.pointObjects = RING_OBJECTS;
+const ringCase = await probe.probeAround({ lon: -72.853, lat: -37.8865 });
 
-assert.equal(ringCase.samples, 8, "every bearing must be sampled within the budget");
-assert.ok(ringCase.requests <= 12);
-assert.equal(ringCase.summary.objectsReturned, 3, "eight samples of the same point must dedupe to three objects");
+assert.equal(ringCase.samples, 6, "the narrow radius runs first, six bearings");
+assert.equal(ringCase.requests, 6, "the ring must stop widening once it found a conductor");
+assert.deepEqual(plain(ringCase.radiiMeters), [5, 12]);
+assert.equal(ringCase.summary.objectsReturned, 4, "six samples of the same point must dedupe");
 assert.equal(ringCase.sampleReports[1].freshObjects, 0, "a repeated object must not be counted twice");
-assert.equal(ringCase.summary.spansFound, 2);
-assert.deepEqual(plain(ringCase.summary.spansByVoltage), { mt: 1, bt: 1, unknown: 0 });
+assert.equal(ringCase.summary.spansFound, 3);
+assert.deepEqual(plain(ringCase.summary.spansByVoltage), { mt: 2, bt: 1, unknown: 0 });
+
+// S4: only a pair of pole codes is an edge. Sector names are not.
 assert.deepEqual(plain(ringCase.edges), [
   { id: 477763812, voltage: "mt", from: "F562540", to: "F562541" },
   { id: 35144088, voltage: "bt", from: "F562540", to: "F562541" },
+]);
+assert.deepEqual(plain(ringCase.unparsedSpans), [
+  { id: 21244828, display: "Trintre - Colonia Miraflores", type: "Alambre Cu Duro Des 6 AWG 1-fas MT" },
 ]);
 assert.equal(ringCase.summary.spanDiagnosis.note, "spans classified");
 assert.ok(

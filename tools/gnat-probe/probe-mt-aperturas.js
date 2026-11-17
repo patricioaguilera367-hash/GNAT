@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.7.0";
+  const VERSION = "1.8.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -48,9 +48,17 @@
   const MAX_SEARCH_DEVICES = 4;
 
   /** Ring sampling: the cheapest way to find the cables attached to a pole. */
-  const RING_RADIUS_METERS = 20;
-  const RING_SAMPLES = 8;
+  const RING_RADII_METERS = [5, 12];
+  const RING_SAMPLES = 6;
   const RING_MAX_REQUESTS = 12;
+  const RING_MAX_TITLE_LOOKUPS = 8;
+
+  /**
+   * A pole code is `F562540` or `5236366`. A span display can also be a pair of
+   * *sector* names (`Trintre - Colonia Miraflores`), which is not an edge.
+   */
+  const POLE_CODE = /^[A-Z]{0,3}\d{4,}$/i;
+  const isPoleCode = (value) => POLE_CODE.test(safeString(value).trim());
 
   const URL_WMC = "svc_wmc.php";
   const URL_OBJECT_VIEW = "Web/component/svc_object_view.php";
@@ -359,9 +367,10 @@
    * Ask GNAT for the class of each object and re-classify with it, in place.
    * Bounded, because every lookup is one more request.
    */
-  async function enrichPointObjects(api, objects) {
+  async function enrichPointObjects(api, objects, maxLookups) {
     const titles = [];
-    for (const item of objects.slice(0, MAX_TITLE_LOOKUPS)) {
+    const limit = Number(maxLookups) > 0 ? Math.floor(Number(maxLookups)) : MAX_TITLE_LOOKUPS;
+    for (const item of objects.slice(0, limit)) {
       const lookup = await step(`title:${item.id}`, () => probeObjectTitle(api, item.id));
       if (!lookup.ok) continue;
       const title = lookup.value.title;
@@ -402,18 +411,23 @@
   const parseSpanDisplay = (display) => {
     const raw = safeString(display).trim();
     const variants = {};
-    const hyphen = raw.split(/\s+-\s+/);
-    if (hyphen.length === 2) variants["space-hyphen-space"] = hyphen.map((s) => s.trim());
-    const anyDash = raw.split(/\s*[-]\s*/).filter(Boolean);
-    if (anyDash.length === 2) variants["any-dash"] = anyDash.map((s) => s.trim());
-    const enDash = raw.split(/\s*[–—]\s*/).filter(Boolean);
-    if (enDash.length === 2) variants["en-dash"] = enDash.map((s) => s.trim());
-    const slash = raw.split(/\s*\/\s*/).filter(Boolean);
-    if (slash.length === 2) variants["slash"] = slash.map((s) => s.trim());
+    const candidates = [
+      ["space-hyphen-space", raw.split(/\s+-\s+/)],
+      ["any-dash", raw.split(/\s*-\s*/).filter(Boolean)],
+      ["en-dash", raw.split(/\s*[–—]\s*/).filter(Boolean)],
+      ["slash", raw.split(/\s*\/\s*/).filter(Boolean)],
+    ];
+    for (const [name, parts] of candidates) {
+      if (parts.length !== 2) continue;
+      const pair = parts.map((part) => part.trim());
+      // Only a pair of pole codes is a graph edge.
+      if (pair.every(isPoleCode)) variants[name] = pair;
+    }
     return {
       display: raw,
       variants,
       parsesCleanly: Object.keys(variants).length > 0,
+      rejected: raw.includes("-") && Object.keys(variants).length === 0,
     };
   };
 
@@ -1400,58 +1414,67 @@
     const api = buildApi(resolveEnv());
     const settings = options || {};
     const center = target && typeof target.lon === "number" && typeof target.lat === "number" ? target : mapCenterLonLat(api);
-    const radius = Number(settings.radiusMeters) > 0 ? Number(settings.radiusMeters) : RING_RADIUS_METERS;
+    const radii = Number(settings.radiusMeters) > 0 ? [Number(settings.radiusMeters)] : RING_RADII_METERS.slice();
     const sampleCount =
       Number(settings.samples) > 0 ? Math.min(24, Math.floor(Number(settings.samples))) : RING_SAMPLES;
 
     const seen = new Map();
     const sampleReports = [];
     let requests = 0;
+    let foundConductor = false;
 
     await withProbeView(api, center.lon, center.lat, async () => {
-      for (let index = 0; index < sampleCount && requests < RING_MAX_REQUESTS; index += 1) {
-        const bearing = (2 * Math.PI * index) / sampleCount;
-        const point = offsetPoint(center.lon, center.lat, radius, bearing);
-        requests += 1;
-        try {
-          const response = await api.objectsInfoForPoint(point.lon, point.lat);
-          const rows = Array.isArray(response) ? response : [];
-          const objects = rows.map((item) => ({
-            id: item && item.id,
-            display: item && item.display,
-            type: item && item.type,
-            ...classify(item),
-            title: null,
-            spanVoltage: null,
-          }));
-          let fresh = 0;
-          for (const item of objects) {
-            const key = safeString(item.id);
-            if (seen.has(key)) continue;
-            seen.set(key, item);
-            fresh += 1;
+      for (const radius of radii) {
+        for (let index = 0; index < sampleCount && requests < RING_MAX_REQUESTS; index += 1) {
+          const bearing = (2 * Math.PI * index) / sampleCount;
+          const point = offsetPoint(center.lon, center.lat, radius, bearing);
+          requests += 1;
+          try {
+            const response = await api.objectsInfoForPoint(point.lon, point.lat);
+            const rows = Array.isArray(response) ? response : [];
+            const objects = rows.map((item) => ({
+              id: item && item.id,
+              display: item && item.display,
+              type: item && item.type,
+              ...classify(item),
+              title: null,
+              spanVoltage: null,
+            }));
+            let fresh = 0;
+            for (const item of objects) {
+              const key = safeString(item.id);
+              if (seen.has(key)) continue;
+              seen.set(key, item);
+              fresh += 1;
+            }
+            if (objects.some((item) => item.isSpan)) foundConductor = true;
+            sampleReports.push({
+              radiusMeters: radius,
+              index,
+              bearingDegrees: Math.round((bearing * 180) / Math.PI),
+              ok: true,
+              objectsReturned: objects.length,
+              freshObjects: fresh,
+              types: objects.map((item) => item.type),
+            });
+          } catch (error) {
+            sampleReports.push({
+              radiusMeters: radius,
+              index,
+              bearingDegrees: Math.round((bearing * 180) / Math.PI),
+              ok: false,
+              error: truncate(safeString(error && error.message) || preview(error), 200),
+            });
           }
-          sampleReports.push({
-            index,
-            bearingDegrees: Math.round((bearing * 180) / Math.PI),
-            ok: true,
-            objectsReturned: objects.length,
-            freshObjects: fresh,
-            types: objects.map((item) => item.type),
-          });
-        } catch (error) {
-          sampleReports.push({
-            index,
-            bearingDegrees: Math.round((bearing * 180) / Math.PI),
-            ok: false,
-            error: truncate(safeString(error && error.message) || preview(error), 200),
-          });
         }
+        // A conductor attached to the pole is close to it: widen only when the
+        // narrow radius found nothing, and never past the request budget.
+        if (foundConductor) break;
       }
     });
 
     const uniqueObjects = [...seen.values()];
-    const titles = await enrichPointObjects(api, uniqueObjects);
+    const titles = await enrichPointObjects(api, uniqueObjects, RING_MAX_TITLE_LOOKUPS);
 
     const cables = uniqueObjects
       .filter((item) => item.isSpan)
@@ -1460,12 +1483,17 @@
         return {
           id: toNumericId(item.id),
           display: item.display,
+          type: item.type,
           title: item.title || null,
           voltage: item.spanVoltage || voltageOf(item),
+          parsesAsPolePair: endpoints.parsesCleanly,
           from: endpoints.parsesCleanly ? Object.values(endpoints.variants)[0][0] : null,
           to: endpoints.parsesCleanly ? Object.values(endpoints.variants)[0][1] : null,
         };
       });
+    const unparsedSpans = cables
+      .filter((cable) => !cable.parsesAsPolePair)
+      .map((cable) => ({ id: cable.id, display: cable.display, type: cable.type }));
 
     const spansByVoltage = { mt: 0, bt: 0, unknown: 0 };
     for (const cable of cables) {
@@ -1482,11 +1510,12 @@
     const caseEntry = {
       code,
       resolved: { lonlat: center, geometryType: "ring" },
-      radiusMeters: radius,
+      radiiMeters: radii,
       samples: sampleReports.length,
       requests,
       sampleReports,
       cables,
+      unparsedSpans,
       edges: cables
         .filter((cable) => cable.from && cable.to)
         .map((cable) => ({ id: cable.id, voltage: cable.voltage, from: cable.from, to: cable.to })),
@@ -1494,13 +1523,14 @@
         code,
         mode: "ring",
         pointFound: true,
-        radiusMeters: radius,
+        radiiMeters: radii,
         samples: sampleReports.length,
         requests,
         objectsReturned: uniqueObjects.length,
         spansFound: cables.length,
         spansByVoltage,
-        spanTypes: [...new Set(cables.map((cable) => cable.title || cable.display))],
+        spanTypes: [...new Set(cables.map((cable) => cable.type || cable.display))],
+        unparsedSpans,
         spanDisplays: cables.map((cable) => ({ display: cable.display, from: cable.from, to: cable.to, voltage: cable.voltage })),
         hasStateEvidence: false,
         stateEvidence: [],
@@ -1517,7 +1547,22 @@
     report.cases.push(caseEntry);
     report.finishedAt = new Date().toISOString();
     console.info(`[gnatProbe] ${code}`);
-    console.info(JSON.stringify({ requests, samples: sampleReports.length, spans: cables.length, spansByVoltage, edges: caseEntry.edges }, null, 1));
+    console.info(
+      JSON.stringify(
+        {
+          requests,
+          samples: sampleReports.length,
+          radiiMeters: radii,
+          spans: cables.length,
+          spansByVoltage,
+          edges: caseEntry.edges,
+          unparsedSpans,
+          spanTypes: [...new Set(cables.map((cable) => cable.type || cable.display))],
+        },
+        null,
+        1
+      )
+    );
     return caseEntry;
   }
 
