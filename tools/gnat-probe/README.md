@@ -85,14 +85,25 @@ For each code:
 5. **Inspect devices** — `get_object_definition` for each switching device, then
    `get_widget_content` only for state-relevant widgets (bounded to 8).
 6. **Read DMS section 23** — `elec_addons_cm_object_data_section.php`
-   (`networking_electrical`): `Vecinos` and `Comportamiento de red por fase`.
-   These are the only known candidates for device state, so the probe reports the
-   inert text and the state-bearing lines verbatim instead of guessing.
+   (`networking_electrical`) is **HTML, not JSON**. `Acs.request` dies decoding it
+   and only the error message carries the payload, so the probe reads it as text
+   over a same-origin GET and falls back to salvaging the HTML out of the `Acs`
+   error. It extracts `Estado operativo`, `Tensión del circuito`, `Circuito`, the
+   per-phase `Real`/`Normal` blocks (the real one with the timestamp it started),
+   the `Vecinos` table and the `net_model_id` mapping (`2` Normal, `3` Real).
 
 Remote HTML is always converted to **inert text**; the probe never assigns it to
 `innerHTML` and never executes remote JS or widget actions.
 
-## Field findings that shaped version 1.1.0 and 1.2.0
+### Why `Vecinos` matters more than the span display
+
+For a switching device, `Vecinos` lists `Borne #1` and `Borne #2` with their own
+ids — the **terminals**, not the neighbouring poles. So the electrical graph is a
+walk over terminals (`object → Vecinos → sibling borne → object`), not over
+pole-to-pole hops parsed out of a span name. The probe reports both, because the
+pole-to-pole shape is only confirmed for AP/BT spans.
+
+## Field findings that shaped versions 1.1.0 to 1.3.0
 
 The first real run of code `F51757` produced no point query and two defects,
 both now pinned by the self-test:
@@ -112,11 +123,24 @@ code) and fixed a third defect the self-test caught: devices probed *on the pole
 kept their ficha but were dropped from the state-evidence collection, so a pole
 with a mounted switch would have reported `hasStateEvidence: false`.
 
+Version 1.3.0 comes from the second field run (`F517570`, `F517572`), which
+answered U2 and exposed three more defects:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Section 23 content never reached the report | The endpoint answers HTML and `Acs.request` fails while JSON-decoding it | Read it as text over `fetch`; salvage the HTML from the `Acs` error message when that is not available |
+| `copySummary()` and `copy()` failed | `NotAllowedError: Document is not focused` | Hidden `textarea` + `execCommand`, then `console.log`, then `__gnatProbe.lastPayload` |
+| `pointFound: true` with `spans: 0` and no explanation | The report counted spans but never listed what the point actually returned | `spanDiagnosis` carries the object count, the type histogram and a sample |
+
+The self-test also caught a fourth: `Jerarquía de red` repeats the `Real` and
+`Normal` headings below `Comportamiento de red por fase`, so a naive parser reset
+the phase block it had just filled and every phase came back `null`.
+
 ## Report shape
 
 ```jsonc
 {
-  "probeVersion": "1.2.0",
+  "probeVersion": "1.3.0",
   "viewport": { "projection": "EPSG:3857", "zoom": 16, "usesViewportParams": true },
   "cases": [{ "code": "F51757", "resolved": {}, "pointQuery": {}, "spanGeometries": {}, "devices": [], "electricalSection": {}, "summary": {} }],
   "verdict": {

@@ -114,3 +114,15 @@ decodificación JSON citado en S1, cuyo mensaje contenía el HTML completo de S2
 `copySummary()` y `copy()` fallaron por falta de foco (S6).
 
 **L5** — «si sigamos.»
+
+**L6** — T1 se implementó inline: el worker delegado falló dos veces con
+`unavailable` del proveedor y no escribió nada en ninguno de los dos intentos
+(verificado: el probe seguía en v1.2.0). S1–S7 quedaron cubiertos y el self-test
+está verde.
+
+**L7** — El self-test encontró un cuarto defecto antes de salir: `Jerarquía de
+red` repite los encabezados `Real` y `Normal` debajo de `Comportamiento de red
+por fase`, así que un parser ingenuo reiniciaba el bloque que acababa de llenar y
+todas las fases volvían `null`. Corregido: un encabezado nunca reinicia un bloque
+con valores, y un bloque sin ningún valor de fase se descarta.
+

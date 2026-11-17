@@ -33,6 +33,47 @@ const SPAN_MT_2 = 900002;
 
 const POLE_LONLAT = [-72.812867652, -37.912094564];
 
+let execCommandResult = true;
+let clipboardBlocked = false;
+const fetchedUrls = [];
+const stubState = { acsElecDecodeError: false };
+
+/** Section 23 payload for a switching device: the real GNAT shape, trimmed. */
+const DEVICE_HTML = [
+  '<div class="section">',
+  '<div class="subsection"><h1>Circuito</h1><table class="grid"><tbody>',
+  '<tr><th>Nombre</th><th class="last">Salida</th></tr>',
+  '<tr class="last"><td>Cajón</td><td class="last"><a href="cm_object_data.php?id=203819095">Cajón</a></td></tr>',
+  '</tbody></table></div>',
+  '<div class="subsection"><h1>Tensión</h1><div style="padding-left: 10px"> Tensión del circuito: <b>13.2 kV</b></div>',
+  '<div class="subsection"><a href="javascript:gis_highlight_objects([9446884,9446885], true)">Resaltar todos</a>',
+  '<h1>Vecinos</h1><table class="grid"><tbody>',
+  '<tr><th>Id</th><th>Tipo</th><th>Id de negocio</th><th class="last">Navegación</th></tr>',
+  '<tr><td><a href="cm_object_data.php?id=9446884">Borne #1 de F517572</a></td><td>Borne</td><td>-</td><td class="last"><a href="javascript:gis_center_on_object(9446884)">ir</a></td></tr>',
+  '<tr class="alt last"><td><a href="cm_object_data.php?id=9446885">Borne #2 de F517572</a></td><td>Borne</td><td>-</td><td class="last"><a href="javascript:gis_center_on_object(9446885)">ir</a></td></tr>',
+  '</tbody></table></div>',
+  '<div class="subsection"><span>Estado operativo: normalmente cerrado (NC)</span></div>',
+  '<div class="subsection"><h1>Comportamiento de red por fase</h1><ul style="padding-left: 10px">',
+  '<li><b>Real</b>&nbsp;<i>(desde 08/04/2026 18:30:00 -04)</i></li>',
+  '<ul style="padding-left: 10px"><li>R: cerrado</li><li>S: cerrado</li><li>T: cerrado</li></ul>',
+  '<li><b>Normal</b></li>',
+  '<ul style="padding-left: 10px"><li>R: cerrado</li><li>S: cerrado</li><li>T: cerrado</li></ul></ul></div>',
+  '<div class="subsection"><h1>Jerarquía de red</h1><h2>Real</h2><div id="div-model-3"></div>',
+  '<script>Ext.widget("container", { items: [{ xtype: "button", handler: function () { Acs.request({ url: "svc_elec_addons_tm.php", params: { action: "paint_upstream_flow", start_node_id: 9446883, net_model_id: 3 } }); } }] });</script></div>',
+  '<div class="subsection"><h2>Normal</h2><div id="div-model-2"></div>',
+  '<script>Ext.widget("container", { items: [{ xtype: "button", handler: function () { Acs.request({ url: "svc_elec_addons_tm.php", params: { action: "paint_upstream_flow", start_node_id: 9446883, net_model_id: 2 } }); } }] });</script></div>',
+  '<div class="subsection"><a href="elec_addons_cm_object_data_section.php?object_id=9446883&list_operations=1">Ver operaciones</a></div>',
+  '</div>',
+].join("");
+
+/** Section 23 payload for a pole: no phases, no vecinos. */
+const POLE_HTML = [
+  '<div class="section">',
+  '<div class="subsection"><h1>Comportamiento de red por fase</h1><ul style="padding-left: 10px"></ul></div>',
+  '<div class="subsection"><h1>Jerarquía de red</h1><h2>Real</h2><div>Cajón [S223]</div></div>',
+  '</div>',
+].join("");
+
 /** Same shape the real `textual_search` returned for `F51757`. */
 const SEARCH_CANDIDATES = [
   { object_id: SUBESTACION_ID, surrogate_in_map_id: SUBESTACION_ID, pin_location: null, display: "F51757 (Subestación MT/BT)" },
@@ -145,6 +186,10 @@ function fakeAcsRequest(options) {
     }
     if (url === "elec_addons_cm_object_data_section.php") {
       if (typeof params.object_id !== "number") throw new Error("object_id must be numeric");
+      if (stubState.acsElecDecodeError) {
+        // Faithful to GNAT: the HTML comes back and Acs dies decoding it.
+        return void failure(new Error("You're trying to decode an invalid JSON String: " + DEVICE_HTML));
+      }
       return void success(
         "<h3>Vecinos</h3><table><tr><td>Nodo de Baja Tensión</td><td>-</td></tr></table>" +
           "<h3>Comportamiento de red por fase</h3>" +
@@ -169,8 +214,23 @@ const view = {
 
 const sandbox = {
   console: { info: () => {}, warn: () => {}, error: () => {}, log: () => {} },
-  document: { querySelector: () => null },
-  navigator: { clipboard: { writeText: async () => {} } },
+  document: {
+    querySelector: () => null,
+    createElement: () => ({ value: "", style: {}, setAttribute: () => {}, select: () => {} }),
+    body: { appendChild: () => {}, removeChild: () => {} },
+    execCommand: () => execCommandResult,
+  },
+  navigator: {
+    clipboard: {
+      writeText: async () => {
+        if (clipboardBlocked) {
+          const error = new Error("Failed to execute 'writeText' on 'Clipboard': Document is not focused.");
+          error.name = "NotAllowedError";
+          throw error;
+        }
+      },
+    },
+  },
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
   clearTimeout: (handle) => globalThis.clearTimeout(handle),
   webMap_: {
@@ -316,5 +376,92 @@ assert.ok(
   requests.every((entry) => !entry.params.object_ids || JSON.parse(entry.params.object_ids).every((id) => typeof id === "number")),
   "direct id probing must also send numeric ids"
 );
+
+// --- S1/S2/S3/S4: section 23 is HTML, so it is read as text over fetch ------
+sandbox.fetch = async (url) => {
+  fetchedUrls.push(url);
+  const match = String(url).match(/object_id=(\d+)/);
+  const objectId = match ? Number(match[1]) : null;
+  const body = objectId === POLE_ID || objectId === SUBESTACION_ID ? POLE_HTML : DEVICE_HTML;
+  return { ok: true, status: 200, text: async () => body };
+};
+
+const htmlRun = await probe.run(["F517572"]);
+assert.equal(htmlRun.errors.length, 0, `fetch run reported errors: ${JSON.stringify(htmlRun.errors)}`);
+
+const htmlCase = htmlRun.cases[0];
+assert.equal(htmlCase.electricalSection.via, "fetch", "section 23 must be read over fetch, not Acs");
+assert.ok(fetchedUrls.length >= 4, `expected one fetch per section, got ${fetchedUrls.length}`);
+for (const url of fetchedUrls) {
+  assert.ok(url.startsWith("elec_addons_cm_object_data_section.php?"), `unexpected fetch url ${url}`);
+  assert.ok(url.includes("section_id=23"), `section id missing from ${url}`);
+}
+
+const sectionSummary = htmlCase.summary;
+assert.equal(sectionSummary.sections.length, 4, "one pole section plus three device sections");
+
+const deviceSection = sectionSummary.sections.find((entry) => entry.objectId !== POLE_ID && entry.estadoOperativo);
+assert.ok(deviceSection, "a device section must expose its operating state");
+
+// S2
+assert.equal(deviceSection.estadoOperativo, "normalmente cerrado (NC)");
+assert.equal(deviceSection.tensionCircuito, "13.2 kV");
+assert.deepEqual(plain(deviceSection.circuito), { id: 203819095, nombre: "Cajón" });
+assert.deepEqual(plain(deviceSection.phases), {
+  real: { R: "cerrado", S: "cerrado", T: "cerrado", desde: "desde 08/04/2026 18:30:00 -04" },
+  normal: { R: "cerrado", S: "cerrado", T: "cerrado" },
+});
+
+// S3: the electrical graph vertices are terminals, not poles.
+assert.deepEqual(plain(deviceSection.vecinos), [
+  { id: 9446884, etiqueta: "Borne #1 de F517572", tipo: "Borne", idNegocio: "-" },
+  { id: 9446885, etiqueta: "Borne #2 de F517572", tipo: "Borne", idNegocio: "-" },
+]);
+assert.deepEqual(plain(deviceSection.neighborIds), [9446884, 9446885]);
+
+// S4
+assert.deepEqual(plain(deviceSection.netModels), [
+  { id: 3, nombre: "Real" },
+  { id: 2, nombre: "Normal" },
+]);
+
+// S5: the evidence reaches the digest.
+assert.equal(sectionSummary.hasStateEvidence, true);
+assert.equal(plain(sectionSummary.conclusions).u2_sectionStateReadable, true);
+const sectionEvidence = sectionSummary.stateEvidence.filter((entry) => entry.source === "device_dms_section_23");
+assert.equal(sectionEvidence.length, 3);
+
+// S7: a point with spans must say so instead of only counting.
+assert.equal(sectionSummary.spanDiagnosis.objectsReturned, 4);
+assert.equal(plain(sectionSummary.spanDiagnosis.typeCounts)["Tramo Aéreo MT"], 2);
+assert.equal(sectionSummary.spanDiagnosis.objectsSample.length, 4);
+assert.equal(sectionSummary.spanDiagnosis.note, "spans classified");
+
+// --- S1 fallback: the payload survives an Acs decode failure --------------
+stubState.acsElecDecodeError = true;
+sandbox.fetch = undefined;
+
+const salvageRun = await probe.run([DBC_ID]);
+const salvageSection = salvageRun.cases[0].electricalSection;
+assert.equal(salvageSection.via, "acs-salvage", "the HTML must be salvaged from the Acs error message");
+assert.equal(salvageSection.parsed.estadoOperativo, "normalmente cerrado (NC)");
+assert.deepEqual(plain(salvageSection.parsed.neighborIds), [9446884, 9446885]);
+
+// --- S6: copying survives an unfocused console ----------------------------
+clipboardBlocked = true;
+execCommandResult = true;
+assert.equal(await probe.copy(), true, "the textarea fallback must copy when the async API is blocked");
+assert.equal(typeof probe.lastPayload, "string");
+assert.ok(probe.lastPayload.includes("probeVersion"));
+
+execCommandResult = false;
+const logged = [];
+const realLog = sandbox.console.log;
+sandbox.console.log = (...args) => logged.push(args);
+assert.equal(await probe.copySummary(), false, "a fully blocked clipboard must report failure, not throw");
+sandbox.console.log = realLog;
+assert.equal(logged.length, 1, "the digest must reach the console when nothing else works");
+assert.ok(String(logged[0][0]).includes("verdict"));
+assert.equal(typeof probe.lastPayload, "string");
 
 console.log("probe.selftest: OK — probe pipeline verified against a stubbed GNAT window");

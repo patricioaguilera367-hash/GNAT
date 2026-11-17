@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.2.0";
+  const VERSION = "1.3.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -182,6 +182,146 @@
     } catch (_) {
       return safeString(value);
     }
+  };
+
+  /** Pull the HTML payload out of an `Acs` JSON-decode failure message. */
+  const extractHtmlFromMessage = (message) => {
+    const text = safeString(message);
+    const index = text.indexOf("<");
+    if (index < 0) return null;
+    const payload = text.slice(index).trim();
+    return payload.startsWith("<") ? payload : null;
+  };
+
+  /** Split a chunk of HTML into `<tr>` rows of tagged cells (id + inert text). */
+  const extractTableRows = (html, maxRows = 40) => {
+    const rows = [];
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch;
+    while ((rowMatch = rowRe.exec(safeString(html))) && rows.length < maxRows) {
+      const cells = [];
+      const cellRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+      let cellMatch;
+      while ((cellMatch = cellRe.exec(rowMatch[1])) && cells.length < 8) {
+        const raw = cellMatch[1];
+        const idMatch = raw.match(/cm_object_data\.php\?id=(\d+)/i);
+        cells.push({
+          texto: htmlToText(raw).replace(/\s+/g, " ").trim(),
+          id: idMatch ? toNumericId(idMatch[1]) : null,
+        });
+      }
+      const hasText = cells.some((cell) => cell.texto.length > 0);
+      if (cells.length > 0 && hasText) rows.push(cells);
+    }
+    return rows;
+  };
+
+  /**
+   * `Comportamiento de red por fase` renders two blocks: `Real` (the operating
+   * state, with the timestamp it started) and `Normal` (the design state).
+   */
+  const parsePhases = (text) => {
+    const phases = { real: null, normal: null };
+    let current = null;
+    for (const rawLine of safeString(text).split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const head = line.match(/^(real|normal)(?:\b|\s|$)/i);
+      if (head) {
+        current = head[1].toLowerCase();
+        // "Jerarquia de red" repeats the same Real/Normal headings further down.
+        // Never reset a block that already carries phase values.
+        if (!phases[current]) phases[current] = { R: null, S: null, T: null };
+        const since = line.match(/\(([^)]*desde[^)]*)\)/i);
+        if (since) phases[current].desde = since[1].trim();
+        continue;
+      }
+      const phase = line.match(/^([RST])\s*:\s*(.+)$/);
+      if (phase && current && phases[current]) phases[current][phase[1]] = phase[2].trim();
+    }
+    // A heading with no phase values behind it is not a readable state.
+    for (const key of ["real", "normal"]) {
+      const block = phases[key];
+      if (block && !["R", "S", "T"].some((name) => block[name])) phases[key] = null;
+    }
+    return phases;
+  };
+
+  /**
+   * Parse DMS section 23 (`networking_electrical`).
+   *
+   * The endpoint answers HTML, never JSON, so it is read as inert text: only its
+   * literal values are extracted and nothing from it is executed.
+   */
+  const parseElectricalSection = (html) => {
+    const raw = safeString(html);
+    const text = htmlToText(raw);
+    const parsed = {
+      hasContent: text.length > 0,
+      text: truncate(text, 4000),
+      estadoOperativo: null,
+      tensionCircuito: null,
+      circuito: null,
+      phases: { real: null, normal: null },
+      vecinos: [],
+      neighborIds: [],
+      links: [],
+      netModels: [],
+    };
+
+    const estado = raw.match(/Estado operativo:\s*([^<]+)/i);
+    if (estado) parsed.estadoOperativo = estado[1].replace(/\s+/g, " ").trim();
+
+    const tension = raw.match(/Tensi[oó]n del circuito:\s*(?:<b>)?\s*([\d.,]+\s*kV)/i);
+    if (tension) parsed.tensionCircuito = tension[1].trim();
+
+    const circuito = raw.match(/<h1>Circuito<\/h1>[\s\S]{0,800}?cm_object_data\.php\?id=(\d+)"[^>]*>([^<]+)</i);
+    if (circuito) parsed.circuito = { id: toNumericId(circuito[1]), nombre: circuito[2].trim() };
+
+    parsed.phases = parsePhases(text);
+
+    const vecinos = raw.match(/<h1>Vecinos<\/h1>([\s\S]*?)<\/table>/i);
+    if (vecinos) {
+      parsed.vecinos = extractTableRows(vecinos[1])
+        .filter((cells) => cells.length >= 2 && cells[0].id !== null)
+        .slice(0, 10)
+        .map((cells) => ({
+          id: cells[0].id,
+          etiqueta: cells[0].texto,
+          tipo: cells[1] ? cells[1].texto : null,
+          idNegocio: cells[2] ? cells[2].texto : null,
+        }));
+    }
+
+    const highlight = raw.match(/gis_highlight_objects\(\[([\d,\s]+)\]/);
+    if (highlight) {
+      parsed.neighborIds = highlight[1]
+        .split(",")
+        .map((value) => toNumericId(value.trim()))
+        .filter((value) => value !== null);
+    }
+
+    const linkRe = /href=['"]([^'"]*(?:cm_object_data|dms_operations|elec_addons_cm_object_data_section)\.php[^'"]*)['"]/gi;
+    let linkMatch;
+    while ((linkMatch = linkRe.exec(raw)) && parsed.links.length < 20) {
+      if (!parsed.links.includes(linkMatch[1])) parsed.links.push(linkMatch[1]);
+    }
+
+    // `net_model_id` 2 is the Normal model and 3 the Real one, as the section's
+    // own inline scripts render it. Read as data; nothing of it is executed.
+    const modelIds = [];
+    const modelRe = /net_model_id:\s*(\d+)/g;
+    let modelMatch;
+    while ((modelMatch = modelRe.exec(raw)) && modelIds.length < 6) {
+      const value = toNumericId(modelMatch[1]);
+      if (value !== null && !modelIds.includes(value)) modelIds.push(value);
+    }
+    parsed.netModels = modelIds.map((value) => ({
+      id: value,
+      nombre: value === 3 ? "Real" : value === 2 ? "Normal" : null,
+    }));
+
+    return parsed;
   };
 
   /** Classify an object by its reported `type` / `display`. */
@@ -364,6 +504,34 @@
           Object.assign({ object_id: objectId, section_id: sectionId }, extra),
           `elec_addons_cm_object_data_section(${objectId},${sectionId})`
         );
+      },
+
+      /**
+       * Section endpoints answer HTML, not JSON, so `Acs.request` fails while
+       * decoding them. Read the payload as text over a same-origin GET instead.
+       */
+      async sectionHtml(objectId, sectionId, extra) {
+        if (typeof w.fetch !== "function") throw new Error("fetch unavailable");
+        const params = Object.assign({ object_id: objectId, section_id: sectionId }, extra);
+        const query = Object.keys(params)
+          .filter((key) => params[key] !== undefined && params[key] !== null)
+          .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+          .join("&");
+        const url = `${URL_ELEC_SECTION}?${query}`;
+        const controller = typeof w.AbortController === "function" ? new w.AbortController() : null;
+        const timer = w.setTimeout(() => {
+          if (controller) controller.abort();
+        }, REQUEST_TIMEOUT_MS);
+        try {
+          const init = controller ? { credentials: "same-origin", signal: controller.signal } : { credentials: "same-origin" };
+          const response = await w.fetch(url, init);
+          if (response && response.ok === false) throw new Error(`HTTP ${response.status} (${url})`);
+          const body = await response.text();
+          if (!safeString(body).trim()) throw new Error(`empty section body (${url})`);
+          return body;
+        } finally {
+          w.clearTimeout(timer);
+        }
       },
     };
   }
@@ -653,40 +821,65 @@
     return out;
   }
 
-  /** Probe the DMS electrical section for `Vecinos` and per-phase state. */
+  /**
+   * Probe DMS section 23 (`networking_electrical`).
+   *
+   * The endpoint answers HTML, not JSON: `Acs.request` fails while decoding it
+   * and the payload survives only inside the error message. Read it as text
+   * first, and salvage it from the error when that is not possible.
+   */
   async function probeElectricalSection(api, objectId) {
     const numericId = toNumericId(objectId);
-    if (numericId === null) return { objectId, attempts: [], error: "no numeric id" };
+    if (numericId === null) return { objectId, attempts: [], parsed: null, error: "no numeric id" };
 
     const attempts = [];
-    const variants = [
-      { section_id: DMS_SECTION_NETWORKING_ELECTRICAL },
-      { section_id: DMS_SECTION_NETWORKING_ELECTRICAL, panel_id: 0, working_time: 0 },
-      { section_id: DMS_SECTION_NETWORKING_ELECTRICAL, scripts: false },
-    ];
+    const variants = [{}, { list_operations: 1 }];
 
     for (const variant of variants) {
       try {
-        const response = await api.elecSection(numericId, DMS_SECTION_NETWORKING_ELECTRICAL, variant);
-        const raw = typeof response === "string" ? response : preview(response, 60000);
-        const text = htmlToText(raw);
+        const html = await api.sectionHtml(numericId, DMS_SECTION_NETWORKING_ELECTRICAL, variant);
+        const parsed = parseElectricalSection(html);
+        attempts.push({ params: variant, ok: true, via: "fetch", htmlLength: html.length, parsed });
+        if (parsed.hasContent) break;
+      } catch (error) {
         attempts.push({
           params: variant,
-          ok: true,
-          rawLength: raw.length,
-          textLength: text.length,
-          text: truncate(text, 6000),
-          stateLines: extractStateLines(text, 60),
-          mentionsVecinos: /vecino/i.test(text),
-          mentionsComportamiento: /comportamiento/i.test(text),
+          ok: false,
+          via: "fetch",
+          error: truncate(safeString(error && error.message) || preview(error), 300),
         });
-        if (text.length > 0) break;
-      } catch (error) {
-        attempts.push({ params: variant, ok: false, error: safeString(error && error.message) || preview(error) });
       }
     }
 
-    return { objectId: numericId, sectionId: DMS_SECTION_NETWORKING_ELECTRICAL, attempts };
+    const satisfied = attempts.some((attempt) => attempt.ok && attempt.parsed && attempt.parsed.hasContent);
+    if (!satisfied) {
+      try {
+        const response = await api.elecSection(numericId, DMS_SECTION_NETWORKING_ELECTRICAL, {});
+        const html = typeof response === "string" ? response : null;
+        attempts.push(
+          html
+            ? { params: { via: "acs" }, ok: true, via: "acs", htmlLength: html.length, parsed: parseElectricalSection(html) }
+            : { params: { via: "acs" }, ok: false, via: "acs", error: "acs returned no text payload" }
+        );
+      } catch (error) {
+        const message = safeString(error && error.message) || preview(error);
+        const html = extractHtmlFromMessage(message);
+        attempts.push(
+          html
+            ? { params: { via: "acs-salvage" }, ok: true, via: "acs-salvage", htmlLength: html.length, parsed: parseElectricalSection(html) }
+            : { params: { via: "acs-salvage" }, ok: false, via: "acs-salvage", error: truncate(message, 300) }
+        );
+      }
+    }
+
+    const winner = attempts.find((attempt) => attempt.ok && attempt.parsed && attempt.parsed.hasContent) || null;
+    return {
+      objectId: numericId,
+      sectionId: DMS_SECTION_NETWORKING_ELECTRICAL,
+      attempts,
+      parsed: winner ? winner.parsed : null,
+      via: winner ? winner.via : null,
+    };
   }
 
   /** Read a candidate device that came from the search list, not from a pole. */
@@ -713,8 +906,26 @@
     return entry;
   }
 
+  /** One evidence entry per object whose section 23 answered with real content. */
   function collectStateEvidence(devices, electricalSection) {
     const evidence = [];
+
+    const pushSection = (section, source, deviceId) => {
+      const parsed = section && section.parsed;
+      if (!parsed) return;
+      evidence.push({
+        source,
+        deviceId,
+        via: section.via,
+        estadoOperativo: parsed.estadoOperativo,
+        tensionCircuito: parsed.tensionCircuito,
+        circuito: parsed.circuito,
+        phases: parsed.phases,
+        vecinos: parsed.vecinos,
+        neighborIds: parsed.neighborIds,
+        netModels: parsed.netModels,
+      });
+    };
 
     for (const device of devices || []) {
       const definition = device.definition || {};
@@ -735,18 +946,10 @@
           });
         }
       }
-      for (const attempt of (device.electricalSection && device.electricalSection.attempts) || []) {
-        if (attempt.ok && attempt.stateLines && attempt.stateLines.total > 0) {
-          evidence.push({ source: "device_dms_section_23", deviceId: device.id ?? device.objectId, lines: attempt.stateLines.lines });
-        }
-      }
+      pushSection(device.electricalSection, "device_dms_section_23", device.id ?? device.objectId);
     }
 
-    for (const attempt of (electricalSection && electricalSection.attempts) || []) {
-      if (attempt.ok && attempt.stateLines && attempt.stateLines.total > 0) {
-        evidence.push({ source: "dms_section_23", lines: attempt.stateLines.lines });
-      }
-    }
+    pushSection(electricalSection, "dms_section_23", electricalSection ? electricalSection.objectId : null);
 
     return evidence;
   }
@@ -766,6 +969,43 @@
     const allDevices = [...(poleCase.devices || []), ...(poleCase.searchDevices || [])];
     const stateEvidence = collectStateEvidence(allDevices, poleCase.electricalSection);
 
+    const sectionOf = (section) => {
+      const parsed = section && section.parsed;
+      if (!parsed) return null;
+      return {
+        objectId: section.objectId,
+        via: section.via,
+        estadoOperativo: parsed.estadoOperativo,
+        tensionCircuito: parsed.tensionCircuito,
+        circuito: parsed.circuito,
+        phases: parsed.phases,
+        vecinos: parsed.vecinos,
+        neighborIds: parsed.neighborIds,
+        netModels: parsed.netModels,
+      };
+    };
+
+    const sections = [sectionOf(poleCase.electricalSection)]
+      .concat((poleCase.searchDevices || []).map((device) => sectionOf(device.electricalSection)))
+      .filter(Boolean);
+
+    // A point query can come back with no spans at all. Report the evidence so
+    // the next run can tell "this point has no spans" from "I misclassified".
+    const objectsSample = objects
+      .slice(0, 25)
+      .map((item) => ({ id: item.id, type: item.type, display: item.display }));
+    const typeCounts = {};
+    for (const item of objects) {
+      const key = safeString(item.type) || "(sin type)";
+      typeCounts[key] = (typeCounts[key] || 0) + 1;
+    }
+    const spanDiagnosis = {
+      objectsReturned: objects.length,
+      typeCounts,
+      objectsSample,
+      note: spans.length > 0 ? "spans classified" : "no object at this point was classified as a span",
+    };
+
     return {
       code: poleCase.code,
       pointFound: !!poleCase.pointQuery,
@@ -782,11 +1022,15 @@
       spanTypes: [...new Set(spans.map((span) => span.type))],
       hasStateEvidence: stateEvidence.length > 0,
       stateEvidence,
+      sections,
+      objectsSample,
+      spanDiagnosis,
       conclusions: {
         u1_mtSpansExposeEndpointCodes: spans.length > 0 && spanParses.some((parsed) => parsed.parsesCleanly),
         u1_spansHaveLineStringGeometry: lineStrings.length > 0,
         u2_devicesAreVisibleOnPole: poleDevices.length > 0 || (poleCase.searchDevices || []).length > 0,
         u2_deviceStateIsReadable: stateEvidence.length > 0,
+        u2_sectionStateReadable: sections.some((entry) => !!entry.estadoOperativo || !!(entry.phases && entry.phases.real)),
       },
     };
   }
@@ -1038,12 +1282,34 @@
     );
 
   async function copyWith(payload, label) {
+    window.__gnatProbe = window.__gnatProbe || {};
+    window.__gnatProbe.lastPayload = payload;
+    window.__gnatProbe.lastPayloadLabel = label;
     try {
       await navigator.clipboard.writeText(payload);
       console.info(`[gnatProbe] ${label} copied (${payload.length} chars).`);
       return true;
     } catch (error) {
-      console.warn(`[gnatProbe] clipboard unavailable for ${label}; read it from the console instead.`, error);
+      // An unfocused console rejects the async clipboard API outright.
+      try {
+        const area = document.createElement("textarea");
+        area.value = payload;
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed";
+        area.style.top = "-1000px";
+        document.body.appendChild(area);
+        area.select();
+        const copied = typeof document.execCommand === "function" && document.execCommand("copy");
+        document.body.removeChild(area);
+        if (copied) {
+          console.info(`[gnatProbe] ${label} copied via fallback (${payload.length} chars).`);
+          return true;
+        }
+      } catch (_) {
+        /* fall through to the console */
+      }
+      console.warn(`[gnatProbe] clipboard blocked for ${label}; payload printed below and kept on __gnatProbe.lastPayload.`);
+      console.log(payload);
       return false;
     }
   }
