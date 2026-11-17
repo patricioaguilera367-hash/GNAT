@@ -103,7 +103,21 @@ walk over terminals (`object → Vecinos → sibling borne → object`), not ove
 pole-to-pole hops parsed out of a span name. The probe reports both, because the
 pole-to-pole shape is only confirmed for AP/BT spans.
 
-## Field findings that shaped versions 1.1.0 to 1.3.0
+### Probing a span, not a pole
+
+`get_objects_info_for_point` on an MT pole returns the pole and its guy wires
+(`Tirante de M.T. rural …`), not spans: a span is the line **between** poles.
+Centre the map on the line and sample that coordinate instead:
+
+```js
+__gnatProbe.probeCenter()                                  // current map centre
+await __gnatProbe.probeAt({ lon: -72.09, lat: -38.73 })     // explicit coordinate
+```
+
+Each call appends a case to the report, so `copySummary()` picks it up. This is
+the shortest path to answering U1.
+
+## Field findings that shaped versions 1.1.0 to 1.4.0
 
 The first real run of code `F51757` produced no point query and two defects,
 both now pinned by the self-test:
@@ -136,11 +150,19 @@ The self-test also caught a fourth: `Jerarquía de red` repeats the `Real` and
 `Normal` headings below `Comportamiento de red por fase`, so a naive parser reset
 the phase block it had just filled and every phase came back `null`.
 
+Version 1.4.0 comes from the third run, which finally read `spanDiagnosis`:
+
+| Finding | Cause | Fix |
+|---|---|---|
+| A pole point returns no spans | The point is the pole, and a span is the line between poles | `probeAt` / `probeCenter` sample a bare coordinate, which is where a span lives |
+| `hasStateEvidence: true` on a pole with no state | The section answered, so it counted as evidence even when empty | Evidence now requires an operating state, a phase value or at least one neighbour |
+| `Type checking failed for value 'widget_ids'` | The raw array is rejected; GNAT wants an encoded value | Sent through `Ext.encode`, and the self-test fails if a raw array is passed |
+
 ## Report shape
 
 ```jsonc
 {
-  "probeVersion": "1.3.0",
+  "probeVersion": "1.4.0",
   "viewport": { "projection": "EPSG:3857", "zoom": 16, "usesViewportParams": true },
   "cases": [{ "code": "F51757", "resolved": {}, "pointQuery": {}, "spanGeometries": {}, "devices": [], "electricalSection": {}, "summary": {} }],
   "verdict": {

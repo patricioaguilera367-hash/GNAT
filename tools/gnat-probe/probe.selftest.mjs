@@ -172,8 +172,11 @@ function fakeAcsRequest(options) {
       if (typeof params.object_id !== "number") throw new Error("object_id must be numeric");
       if (params.action === "get_object_definition") return void success(widgetDefinitionFor(params.object_id));
       if (params.action === "get_widget_content") {
+        // GNAT rejects a raw array here: `widget_ids` must be an encoded string.
+        if (typeof params.widget_ids !== "string") throw new Error("widget_ids must be an encoded JSON string");
+        const widgetIds = JSON.parse(params.widget_ids);
         return void success(
-          params.widget_ids.map((widgetId) => ({
+          widgetIds.map((widgetId) => ({
             widget_id: widgetId,
             content:
               widgetId === 142
@@ -190,11 +193,7 @@ function fakeAcsRequest(options) {
         // Faithful to GNAT: the HTML comes back and Acs dies decoding it.
         return void failure(new Error("You're trying to decode an invalid JSON String: " + DEVICE_HTML));
       }
-      return void success(
-        "<h3>Vecinos</h3><table><tr><td>Nodo de Baja Tensión</td><td>-</td></tr></table>" +
-          "<h3>Comportamiento de red por fase</h3>" +
-          "<table><tr><td>Cerrado</td><td>Cerrado</td><td>Cerrado</td></tr></table>"
-      );
+      return void success(DEVICE_HTML);
     }
     return void failure(new Error(`unexpected url ${url}`));
   } catch (error) {
@@ -242,7 +241,7 @@ const sandbox = {
     apply: (base, extra) => Object.assign({}, base, extra),
     encode: (value) => JSON.stringify(value),
   },
-  ol: { proj: { fromLonLat: (coords) => coords } },
+  ol: { proj: { fromLonLat: (coords) => coords, toLonLat: (coords) => coords } },
 };
 
 vm.createContext(sandbox);
@@ -431,6 +430,14 @@ assert.equal(plain(sectionSummary.conclusions).u2_sectionStateReadable, true);
 const sectionEvidence = sectionSummary.stateEvidence.filter((entry) => entry.source === "device_dms_section_23");
 assert.equal(sectionEvidence.length, 3);
 
+// A section that answers with nothing must not read as state evidence.
+assert.equal(
+  sectionSummary.stateEvidence.filter((entry) => entry.source === "dms_section_23").length,
+  0,
+  "an empty pole section must not be counted as readable state"
+);
+assert.equal(sectionSummary.sections.filter((entry) => !entry.estadoOperativo && !entry.phases.real).length, 1);
+
 // S7: a point with spans must say so instead of only counting.
 assert.equal(sectionSummary.spanDiagnosis.objectsReturned, 4);
 assert.equal(plain(sectionSummary.spanDiagnosis.typeCounts)["Tramo Aéreo MT"], 2);
@@ -446,6 +453,21 @@ const salvageSection = salvageRun.cases[0].electricalSection;
 assert.equal(salvageSection.via, "acs-salvage", "the HTML must be salvaged from the Acs error message");
 assert.equal(salvageSection.parsed.estadoOperativo, "normalmente cerrado (NC)");
 assert.deepEqual(plain(salvageSection.parsed.neighborIds), [9446884, 9446885]);
+
+// --- probeAt: inventory a bare coordinate, e.g. the middle of a span -------
+const atCase = await probe.probeAt({ lon: -72.1, lat: -38.7 }, "mid-span");
+assert.equal(atCase.summary.pointFound, true);
+assert.equal(atCase.summary.spansFound, 2, "the sample point must expose its spans");
+assert.equal(atCase.summary.lineStringsReturned, 2);
+assert.equal(atCase.summary.spanDiagnosis.note, "spans classified");
+assert.ok(
+  probe.report.cases.some((entry) => entry.code === "mid-span"),
+  "a coordinate probe must land in the report"
+);
+
+const centreCase = await probe.probeCenter("centre");
+assert.equal(plain(centreCase.resolved).geometryType, "coordinate");
+assert.equal(centreCase.code, "centre");
 
 // --- S6: copying survives an unfocused console ----------------------------
 clipboardBlocked = true;

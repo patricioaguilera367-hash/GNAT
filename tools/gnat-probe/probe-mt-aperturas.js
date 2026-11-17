@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -483,7 +483,7 @@
       widgetContent(objectId, widgetIds) {
         return request(
           URL_OBJECT_VIEW,
-          { action: "get_widget_content", object_id: objectId, widget_ids: widgetIds },
+          { action: "get_widget_content", object_id: objectId, widget_ids: w.Ext.encode(widgetIds) },
           `get_widget_content(${objectId})`
         );
       },
@@ -913,6 +913,13 @@
     const pushSection = (section, source, deviceId) => {
       const parsed = section && section.parsed;
       if (!parsed) return;
+      // A section that answered but carries nothing is not state evidence: a pole
+      // with an empty `Comportamiento de red por fase` must not read as "readable".
+      const meaningful =
+        !!parsed.estadoOperativo ||
+        !!(parsed.phases && (parsed.phases.real || parsed.phases.normal)) ||
+        (Array.isArray(parsed.vecinos) && parsed.vecinos.length > 0);
+      if (!meaningful) return;
       evidence.push({
         source,
         deviceId,
@@ -1180,6 +1187,95 @@
     return poleCase;
   }
 
+  const verdictOf = (summaries) => ({
+    u1_mtSpansExposeEndpointCodes: summaries.some((summary) => summary.conclusions && summary.conclusions.u1_mtSpansExposeEndpointCodes),
+    u1_spansHaveLineStringGeometry: summaries.some((summary) => summary.conclusions && summary.conclusions.u1_spansHaveLineStringGeometry),
+    u2_devicesAreVisibleOnPole: summaries.some((summary) => summary.conclusions && summary.conclusions.u2_devicesAreVisibleOnPole),
+    u2_deviceStateIsReadable: summaries.some((summary) => summary.conclusions && summary.conclusions.u2_deviceStateIsReadable),
+    everySpanDisplayParses: summaries.length > 0 && summaries.every((summary) => summary.everySpanDisplayParses),
+    anyPointFound: summaries.some((summary) => summary.pointFound),
+  });
+
+  /**
+   * Inventory a bare coordinate: no code, no textual search. A span is a line
+   * between two poles, so the middle of a span can answer what the pole cannot.
+   */
+  async function probePointAt(api, lon, lat, label) {
+    const pointCase = {
+      code: label || `@${lon},${lat}`,
+      resolved: { lonlat: { lon, lat }, geometryType: "coordinate" },
+      geometryAttempts: [],
+      pointQuery: null,
+      spanGeometries: null,
+      devices: [],
+      searchDevices: [],
+      electricalSection: null,
+    };
+
+    const point = await step(`point:${pointCase.code}`, () => probePoint(api, lon, lat));
+    pointCase.pointQuery = point.ok ? point.value : { error: point.error, objects: [] };
+
+    const objects = (pointCase.pointQuery && pointCase.pointQuery.objects) || [];
+    const spanIds = objects
+      .filter((item) => item.isSpan)
+      .map((item) => toNumericId(item.id))
+      .filter((id) => id !== null);
+    if (spanIds.length > 0) {
+      const spans = await step(`spans:${pointCase.code}`, () => probeSpanGeometries(api, spanIds));
+      pointCase.spanGeometries = spans.ok ? spans.value : { error: spans.error, features: [] };
+    }
+
+    const subject = objects.find((item) => item.isDevice) || objects.find((item) => item.isPole) || objects[0] || null;
+    if (subject && toNumericId(subject.id) !== null) {
+      const section = await step(`section23:${subject.id}`, () => probeElectricalSection(api, subject.id));
+      pointCase.electricalSection = section.ok ? section.value : { error: section.error, attempts: [] };
+      if (subject.isDevice) {
+        const definition = await step(`device:${subject.id}`, () => probeDeviceDefinition(api, subject.id));
+        pointCase.devices.push({
+          id: subject.id,
+          display: subject.display,
+          type: subject.type,
+          definition: definition.ok ? definition.value : { error: definition.error },
+        });
+      }
+    }
+
+    pointCase.summary = summariseCase(pointCase);
+    return pointCase;
+  }
+
+  /** Resolve the current map view centre to lon/lat. */
+  function mapCenterLonLat(api) {
+    const center = api.wm.map.getView().getCenter();
+    if (!center) throw new Error("map view has no centre");
+    const w = api.w;
+    const lonlat = w.ol && w.ol.proj && typeof w.ol.proj.toLonLat === "function" ? w.ol.proj.toLonLat(center) : center;
+    return { lon: lonlat[0], lat: lonlat[1] };
+  }
+
+  /**
+   * Inventory one coordinate. Defaults to the current map centre, which is how
+   * a span is sampled: centre the map on the line and run it.
+   */
+  async function probeAt(target, label) {
+    const api = buildApi(resolveEnv());
+    const position =
+      target && typeof target.lon === "number" && typeof target.lat === "number" ? target : mapCenterLonLat(api);
+    const pointCase = await probePointAt(
+      api,
+      position.lon,
+      position.lat,
+      label || `@${Number(position.lon).toFixed(6)},${Number(position.lat).toFixed(6)}`
+    );
+    report.cases.push(pointCase);
+    report.finishedAt = new Date().toISOString();
+    report.verdict = verdictOf(report.cases.map((entry) => entry.summary).filter(Boolean));
+    console.info(`[gnatProbe] ${pointCase.code}`, pointCase.summary.spanDiagnosis);
+    return pointCase;
+  }
+
+  const probeCenter = (label) => probeAt(null, label);
+
   // ---------------------------------------------------------------- entrypoint
 
   async function run(input) {
@@ -1235,14 +1331,7 @@
 
     const summaries = report.cases.map((entry) => entry.summary).filter(Boolean);
     report.finishedAt = new Date().toISOString();
-    report.verdict = {
-      u1_mtSpansExposeEndpointCodes: summaries.some((summary) => summary.conclusions && summary.conclusions.u1_mtSpansExposeEndpointCodes),
-      u1_spansHaveLineStringGeometry: summaries.some((summary) => summary.conclusions && summary.conclusions.u1_spansHaveLineStringGeometry),
-      u2_devicesAreVisibleOnPole: summaries.some((summary) => summary.conclusions && summary.conclusions.u2_devicesAreVisibleOnPole),
-      u2_deviceStateIsReadable: summaries.some((summary) => summary.conclusions && summary.conclusions.u2_deviceStateIsReadable),
-      everySpanDisplayParses: summaries.length > 0 && summaries.every((summary) => summary.everySpanDisplayParses),
-      anyPointFound: summaries.some((summary) => summary.pointFound),
-    };
+    report.verdict = verdictOf(summaries);
 
     console.info("[gnatProbe] verdict:", report.verdict);
     console.info("[gnatProbe] run `__gnatProbe.copy()` to copy the full report.");
@@ -1321,6 +1410,8 @@
   window.__gnatProbe = {
     version: VERSION,
     run,
+    probeAt,
+    probeCenter,
     json,
     summaryJson,
     copy,
