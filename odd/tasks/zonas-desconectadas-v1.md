@@ -74,6 +74,34 @@ UI se valida con un smoke del dueño sobre el mapa.
 - **T3** — Integración en `centrality_v10.js`: entrada en `Herramientas`, selección
   como semilla, dibujo de la zona en la capa propia.
 
+## Roadmap
+
+**Objetivo único del motor:** dado el conjunto de postes donde el operador va a
+trabajar, decir qué tramos quedan desenergizados y **qué aparatos de maniobra los
+aíslan**, con su estado. Nada más.
+
+Diagnóstico: 7 preguntas cerradas, 2 abiertas. Con D1 y D2 termina el probe y no
+se publica otra versión de diagnóstico salvo que una medición contradiga un
+supuesto.
+
+| # | Paso | Estado |
+|---|---|---|
+| D1 | ¿El anillo a 5 m halla cables en un poste? | abierta |
+| D2 | ¿La sección 23 de una maniobra **MT** da estado por fase? | abierta |
+| T2a | Grafo por pares de códigos, tensión por arista | pendiente |
+| T2b | Exploración con presupuesto 24 req / 8 s y motivo de parada | pendiente |
+| T2c | Borde: maniobras, estado por fase, `desconocido` explícito | pendiente |
+| T2d | Verificar el adaptador contra las respuestas registradas | pendiente |
+| T3 | Ítem en `Herramientas` + dibujo de la zona | pendiente |
+
+**D1 decide:** el descubrimiento nace del poste que el operador seleccionó. Si a
+5 m y a 12 m no aparece nada, el enfoque híbrido no sirve donde importa y hay que
+repensarlo antes de escribir el grafo.
+
+**D2 decide:** el entregable es una lista de maniobras que aíslan la zona. Sin
+estado por fase, la lista es un conjunto de nombres sin valor para un permiso de
+trabajo, y S8 cambia de contrato.
+
 ## Log
 
 **L1** — «C, sinceramente si a la vista lo voy a resolver en 3 segundos, no tiene
