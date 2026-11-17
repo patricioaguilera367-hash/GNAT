@@ -338,6 +338,18 @@ function makeChainClient(config = {}) {
   assert.equal(audit.verification.valid, true, audit.verification.reason);
   assert.equal(audit.status, "consistente");
   assert.equal(audit.findings.filter((finding) => finding.level === "bloqueante").length, 0);
+  // The audit and its verification share one clock instead of restarting it.
+  assert.equal(audit.budget.requests, audit.verification.budget.requests);
+
+  const ground = await zone.auditPermit({
+    permit: { workCodes: ["PA1003"], openCodes: [{ code: "PA1002", side: "a" }], groundCodes: ["PA1002"] },
+    client: makeChainClient({ withSource: true }),
+    settings: { maxRequests: 800, readSources: true },
+  });
+  assert.ok(
+    ground.findings.some((finding) => /PA1002 se declara puesta a tierra/.test(finding.text)),
+    "a ground outside the dead island is reported"
+  );
 }
 
 // A code the network does not own makes the permit inconsistent.

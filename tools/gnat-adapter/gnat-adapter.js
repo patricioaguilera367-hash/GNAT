@@ -24,11 +24,12 @@
     sectionId: 23,
     radiiMeters: [5, 12],
     bearings: 6,
-    maxRequests: 24,
-    maxMilliseconds: 8000,
+    maxRequests: 60,
+    maxMilliseconds: 45000,
     maxDeviceLookups: 8,
     maxStateReads: 4,
     maxSourceHops: 6,
+    concurrency: 4,
   };
 
   /** `F562541` or `5236366`, at the start of a display. */
@@ -104,6 +105,86 @@
     return {
       lon: lon + (radiusMeters * Math.cos(bearingRadians)) / metersPerDegreeLon,
       lat: lat + (radiusMeters * Math.sin(bearingRadians)) / metersPerDegreeLat,
+    };
+  };
+
+  /** Bounded concurrency: GNAT answers in ~1.7 s, so serial samples are unusable. */
+  const mapLimit = async (items, limit, fn) => {
+    const out = new Array(items.length);
+    let cursor = 0;
+    const workers = [];
+    const width = Math.max(1, Math.min(limit || 4, items.length));
+    for (let worker = 0; worker < width; worker += 1) {
+      workers.push(
+        (async () => {
+          while (cursor < items.length) {
+            const index = cursor;
+            cursor += 1;
+            out[index] = await fn(items[index], index);
+          }
+        })()
+      );
+    }
+    await Promise.all(workers);
+    return out;
+  };
+
+  const samplesOf = (point, radiusMeters, bearings) => {
+    const list = [];
+    for (let index = 0; index < bearings; index += 1) {
+      list.push(offsetOf(point.lon, point.lat, radiusMeters, (2 * Math.PI * index) / bearings));
+    }
+    return list;
+  };
+
+  /**
+   * One pole ring, sampled in parallel, with the narrow radius first.
+   *
+   * Returns the raw rows so each caller keeps its own classification, and
+   * `complete: false` when the budget cut the ring short.
+   */
+  const ringAt = async ({ client, settings, spend, canSpend, point }) => {
+    const rows = [];
+    let complete = true;
+    for (const radius of settings.radiiMeters) {
+      const samples = samplesOf(point, radius, settings.bearings);
+      const batches = await mapLimit(samples, settings.concurrency, async (sample) => {
+        if (!canSpend()) {
+          complete = false;
+          return [];
+        }
+        try {
+          return (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
+        } catch (error) {
+          return [];
+        }
+      });
+      for (const batch of batches) {
+        for (const row of Array.isArray(batch) ? batch : []) rows.push(row);
+      }
+      if (rows.some((row) => codePairOf(row && row.display))) break;
+    }
+    return { rows, complete };
+  };
+
+  /** A spender shared across phases, so the wall clock is not restarted mid-run. */
+  const makeSpender = (settings, existing) => {
+    const state = existing || { requests: 0, startedAt: Date.now() };
+    return {
+      state,
+      canSpend: () =>
+        state.requests < settings.maxRequests && Date.now() - state.startedAt < settings.maxMilliseconds,
+      spend: async (fn) => {
+        state.requests += 1;
+        if (settings.onProgress && state.requests % 20 === 0) {
+          try {
+            settings.onProgress({ requests: state.requests, elapsedMs: Date.now() - state.startedAt });
+          } catch (error) {
+            // progress output must never break a run
+          }
+        }
+        return fn();
+      },
     };
   };
 
@@ -194,24 +275,12 @@
     for (const entry of resolved) {
       if (!canSpend()) break;
       let found = false;
-      for (const radius of settings.radiiMeters) {
-        for (let index = 0; index < settings.bearings && canSpend(); index += 1) {
-          const bearing = (2 * Math.PI * index) / settings.bearings;
-          const point = offsetOf(entry.lonlat.lon, entry.lonlat.lat, radius, bearing);
-          try {
-            const rows = (await spend(() => client.pointObjects(point.lon, point.lat))) || [];
-            for (const row of Array.isArray(rows) ? rows : []) {
-              const key = safeText(row && row.id);
-              if (objects.has(key)) continue;
-              objects.set(key, { id: row.id, display: row.display, type: row.type });
-            }
-            if ((Array.isArray(rows) ? rows : []).some((row) => codePairOf(row && row.display))) found = true;
-          } catch (error) {
-            // a sample that fails is a sample lost, not a reason to stop
-          }
-        }
-        if (found) break;
+      const ring = await ringAt({ client, settings, spend, canSpend, point: entry.lonlat });
+      for (const row of ring.rows) {
+        const key = safeText(row && row.id);
+        if (!objects.has(key)) objects.set(key, { id: row.id, display: row.display, type: row.type });
       }
+      found = ring.rows.some((row) => codePairOf(row && row.display));
       ringed.push({ code: entry.code, radiusMetersUsed: found ? settings.radiiMeters[0] : settings.radiiMeters[settings.radiiMeters.length - 1] });
     }
 
@@ -349,13 +418,12 @@
     const opened = openings.map((entry) => entry.code);
     const sideOf = new Map(openings.map((entry) => [entry.code, entry.side]));
 
-    const started = Date.now();
-    const used = { requests: 0 };
-    const canSpend = () => used.requests < settings.maxRequests && Date.now() - started < settings.maxMilliseconds;
-    const spend = async (fn) => {
-      used.requests += 1;
-      return fn();
-    };
+    const spender = makeSpender(settings, settings.budget);
+    settings.budget = spender.state;
+    const canSpend = spender.canSpend;
+    const spend = spender.spend;
+    const used = spender.state;
+    const started = spender.state.startedAt;
 
     const cut = new Set(opened);
     const island = new Set(work);
@@ -371,34 +439,19 @@
     const ringObjects = async (point, code) => {
       const spans = [];
       const others = [];
-      for (const radius of settings.radiiMeters) {
-        for (let index = 0; index < settings.bearings; index += 1) {
-          if (!canSpend()) {
-            partial = true;
-            return { spans, others };
+      const ring = await ringAt({ client, settings, spend, canSpend, point });
+      if (!ring.complete) partial = true;
+      for (const row of ring.rows) {
+        const pair = codePairOf(row && row.display);
+        if (!pair) {
+          if (row && row.id !== undefined && !others.some((entry) => entry.id === row.id)) {
+            others.push({ id: row.id, display: row.display });
           }
-          const bearing = (2 * Math.PI * index) / settings.bearings;
-          const sample = offsetOf(point.lon, point.lat, radius, bearing);
-          let rows = [];
-          try {
-            rows = (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
-          } catch (error) {
-            continue;
-          }
-          for (const row of Array.isArray(rows) ? rows : []) {
-            const pair = codePairOf(row && row.display);
-            if (!pair) {
-              if (row && row.id !== undefined && !others.some((entry) => entry.id === row.id)) {
-                others.push({ id: row.id, display: row.display });
-              }
-              continue;
-            }
-            if (voltageOf(row) !== voltage) continue;
-            const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
-            if (other && !spans.some((entry) => entry.other === other)) spans.push({ other, id: row.id });
-          }
+          continue;
         }
-        if (spans.length > 0 || others.length > 0) break;
+        if (voltageOf(row) !== voltage) continue;
+        const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
+        if (other && !spans.some((entry) => entry.other === other)) spans.push({ other, id: row.id });
       }
       return { spans, others };
     };
@@ -530,53 +583,33 @@
       seenPoints.add(code);
 
       let found = false;
-      let sampledAll = true;
-      for (const radius of settings.radiiMeters) {
-        for (let index = 0; index < settings.bearings; index += 1) {
-          if (!canSpend()) {
-            sampledAll = false;
-            break;
-          }
-          const bearing = (2 * Math.PI * index) / settings.bearings;
-          const sample = offsetOf(point.lon, point.lat, radius, bearing);
-          let rows = [];
-          try {
-            rows = (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
-          } catch (error) {
-            continue;
-          }
-          for (const row of Array.isArray(rows) ? rows : []) {
-            const pair = codePairOf(row && row.display);
-            if (pair && voltageOf(row) === voltage) {
-              found = true;
-              const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
-              if (other && !island.has(other) && boundary.indexOf(other) === -1) {
-                if (cut.has(other)) {
-                  boundary.push(other);
-                } else {
-                  island.add(other);
-                  queue.push(other);
-                }
-              }
-            } else if (!pair && row && row.id !== undefined && settings.readSources && !sourceIds.has(row.id)) {
-              if (!canSpend()) continue;
-              try {
-                const title = safeText(await spend(() => client.objectTitle(row.id)));
-                if (SOURCE_TITLE.test(title)) {
-                  sourceIds.add(row.id);
-                  sources.push({ code, objectId: Number(row.id), title });
-                }
-              } catch (error) {
-                // an unreadable title is not a source, and not evidence of one
-              }
+      const ring = await ringAt({ client, settings, spend, canSpend, point });
+      if (!ring.complete) partial = true;
+      for (const row of ring.rows) {
+        const pair = codePairOf(row && row.display);
+        if (pair && voltageOf(row) === voltage) {
+          found = true;
+          const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
+          if (other && !island.has(other) && boundary.indexOf(other) === -1) {
+            if (cut.has(other)) {
+              boundary.push(other);
+            } else {
+              island.add(other);
+              queue.push(other);
             }
           }
+        } else if (!pair && row && row.id !== undefined && settings.readSources && !sourceIds.has(row.id)) {
+          if (!canSpend()) continue;
+          try {
+            const title = safeText(await spend(() => client.objectTitle(row.id)));
+            if (SOURCE_TITLE.test(title)) {
+              sourceIds.add(row.id);
+              sources.push({ code, objectId: Number(row.id), title });
+            }
+          } catch (error) {
+            // an unreadable title is not a source, and not evidence of one
+          }
         }
-        if (!sampledAll) {
-          partial = true;
-          break;
-        }
-        if (found) break;
       }
     }
 
@@ -687,19 +720,26 @@
     const settings = Object.assign({}, DEFAULTS, opts.settings || {});
     const voltage = safeText(opts.voltage || "mt").toLowerCase();
 
-    const started = Date.now();
-    const used = { requests: 0 };
-    const canSpend = () => used.requests < settings.maxRequests && Date.now() - started < settings.maxMilliseconds;
-    const spend = async (fn) => {
-      used.requests += 1;
-      return fn();
-    };
+    const spender = makeSpender(settings, settings.budget);
+    settings.budget = spender.state;
+    const canSpend = spender.canSpend;
+    const spend = spender.spend;
+    const used = spender.state;
+    const started = spender.state.startedAt;
 
     const declared = [];
+    // One code can hold several roles at once: the same pole is often both the
+    // work zone and the switch that isolates it.
     const declare = (codes, role) => {
       for (const raw of codes || []) {
         const code = safeText(typeof raw === "string" ? raw : raw && raw.code).trim().toUpperCase();
-        if (code && !declared.some((entry) => entry.code === code)) declared.push({ code, role });
+        if (!code) continue;
+        const existing = declared.find((entry) => entry.code === code);
+        if (existing) {
+          if (!existing.roles.includes(role)) existing.roles.push(role);
+          continue;
+        }
+        declared.push({ code, role, roles: [role] });
       }
     };
     declare([permit.objectCode], "objeto");
@@ -738,35 +778,22 @@
     const ring = async (point, code) => {
       const spans = [];
       const others = [];
-      for (const radius of settings.radiiMeters) {
-        for (let index = 0; index < settings.bearings; index += 1) {
-          if (!canSpend()) return { spans, others, complete: false };
-          const bearing = (2 * Math.PI * index) / settings.bearings;
-          const sample = offsetOf(point.lon, point.lat, radius, bearing);
-          let rows = [];
-          try {
-            rows = (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
-          } catch (error) {
-            continue;
+      const found = await ringAt({ client, settings, spend, canSpend, point });
+      for (const row of found.rows) {
+        const pair = codePairOf(row && row.display);
+        if (!pair) {
+          if (row && row.id !== undefined && !others.some((entry) => entry.id === row.id)) {
+            others.push({ id: row.id, display: row.display, type: row.type });
           }
-          for (const row of Array.isArray(rows) ? rows : []) {
-            const pair = codePairOf(row && row.display);
-            if (!pair) {
-              if (row && row.id !== undefined && !others.some((entry) => entry.id === row.id)) {
-                others.push({ id: row.id, display: row.display, type: row.type });
-              }
-              continue;
-            }
-            if (voltageOf(row) !== voltage) continue;
-            const display = safeText(row.display);
-            if (!spans.some((entry) => entry.display === display)) {
-              spans.push({ id: row.id, from: pair[0], to: pair[1], display, voltage: voltageOf(row), type: row.type });
-            }
-          }
+          continue;
         }
-        if (spans.length > 0) break;
+        if (voltageOf(row) !== voltage) continue;
+        const display = safeText(row.display);
+        if (!spans.some((entry) => entry.display === display)) {
+          spans.push({ id: row.id, from: pair[0], to: pair[1], display, voltage: voltageOf(row), type: row.type });
+        }
       }
-      return { spans, others, complete: true };
+      return { spans, others, complete: found.complete };
     };
 
     const points = [];
@@ -827,6 +854,15 @@
       findings.push({ level: "advertencia", text: `${label.code || label.objectId} es ${label.title} dentro de la zona y no figura como apertura` });
     }
     const zoneCodes = new Set(points.filter(isZone).map((entry) => entry.code));
+    const islandSet = new Set(verification.island || []);
+    for (const entry of declared.filter((item) => item.roles.includes("puesta a tierra"))) {
+      if (islandSet.size > 0 && !islandSet.has(entry.code)) {
+        findings.push({
+          level: "advertencia",
+          text: `${entry.code} se declara puesta a tierra pero no queda dentro de la isla sin tensión`,
+        });
+      }
+    }
     const orphanSpans = zoneSpans.filter((span) => !zoneCodes.has(span.from) && !zoneCodes.has(span.to));
     for (const span of orphanSpans) {
       findings.push({ level: "info", text: `tramo ${span.display} no toca ningún código declarado` });
@@ -846,7 +882,7 @@
       verification,
       findings,
       voltages,
-      budget: { requests: used.requests + verification.budget.requests, maxRequests: settings.maxRequests, elapsedMs: Date.now() - started },
+      budget: { requests: used.requests, maxRequests: settings.maxRequests, elapsedMs: Date.now() - started },
     };
   }
 
@@ -854,7 +890,7 @@
     points.filter((entry) => entry.role === "objeto" || entry.role === "punto de faenas").map((entry) => entry.code);
 
   return {
-    version: "1.4.0",
+    version: "1.5.0",
     auditPermit,
     convexHull,
     findWorkZone,

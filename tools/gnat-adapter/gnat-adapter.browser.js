@@ -110,6 +110,16 @@
     };
   }
 
+  /** Progress output, because a run of hundreds of 1.7 s requests looks hung. */
+  function withProgress(options) {
+    const settings = Object.assign({}, (options && options.settings) || {});
+    if (!settings.onProgress) {
+      settings.onProgress = (info) =>
+        console.info(`[gnatZone] ${info.requests} requests · ${Math.round(info.elapsedMs / 1000)} s`);
+    }
+    return Object.assign({}, options || {}, { settings });
+  }
+
   function attach(engine) {
     const api = engine || root.__gnatZone;
     if (!api || typeof api.findWorkZone !== "function") {
@@ -117,11 +127,11 @@
     }
     api.makeClient = makeClient;
     api.findWorkZoneLive = (poleCodes, options) =>
-      api.findWorkZone(Object.assign({}, options || {}, { poleCodes, client: makeClient(options) }));
+      api.findWorkZone(Object.assign(withProgress(options), { poleCodes, client: makeClient(options) }));
     api.verifyAperturasLive = (options) =>
-      api.verifyAperturas(Object.assign({}, options || {}, { client: makeClient(options) }));
+      api.verifyAperturas(Object.assign(withProgress(options), { client: makeClient(options) }));
     api.auditPermitLive = (permit, options) =>
-      api.auditPermit(Object.assign({}, options || {}, { permit, client: makeClient(options) }));
+      api.auditPermit(Object.assign(withProgress(options), { permit, client: makeClient(options) }));
     return api;
   }
 

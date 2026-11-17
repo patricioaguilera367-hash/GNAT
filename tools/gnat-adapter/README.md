@@ -142,8 +142,14 @@ figuran como apertura salen como advertencia: ahí es donde falta una maniobra.
   un par de localidades y no entra al grafo.
 - **MT y BT no se mezclan.** Una misma arista física lleva las dos tensiones; se
   informan por separado y no se colapsan.
-- **Presupuesto primero.** 24 requests / 8 s por defecto. Al agotarse devuelve lo
+- **Presupuesto primero.** 60 requests / 45 s por defecto. Al agotarse devuelve lo
   medido con `status: "parcial"` y su motivo; si no midió nada, `no concluyente`.
+- **Muestreo en paralelo (4).** GNAT responde en ~1,7 s por request: un anillo de 6
+  muestras en serie son 10 s. En paralelo baja a ~3 s.
+- **Reloj compartido.** Auditoría y verificación usan el mismo contador: el
+  presupuesto es total, no por fase.
+- **Progreso visible.** `[gnatZone] 20 requests · 34 s` cada 20 requests, para que
+  una corrida larga no parezca colgada.
 
 ## Verificar sin navegador
 
