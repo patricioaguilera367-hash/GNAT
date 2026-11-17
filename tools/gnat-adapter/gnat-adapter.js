@@ -28,6 +28,7 @@
     maxMilliseconds: 8000,
     maxDeviceLookups: 8,
     maxStateReads: 4,
+    maxSourceHops: 6,
   };
 
   /** `F562541` or `5236366`, at the start of a display. */
@@ -366,6 +367,121 @@
     const seenPoints = new Set();
     let partial = false;
 
+    /** Everything the ring finds around a pole, split into spans and other objects. */
+    const ringObjects = async (point, code) => {
+      const spans = [];
+      const others = [];
+      for (const radius of settings.radiiMeters) {
+        for (let index = 0; index < settings.bearings; index += 1) {
+          if (!canSpend()) {
+            partial = true;
+            return { spans, others };
+          }
+          const bearing = (2 * Math.PI * index) / settings.bearings;
+          const sample = offsetOf(point.lon, point.lat, radius, bearing);
+          let rows = [];
+          try {
+            rows = (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
+          } catch (error) {
+            continue;
+          }
+          for (const row of Array.isArray(rows) ? rows : []) {
+            const pair = codePairOf(row && row.display);
+            if (!pair) {
+              if (row && row.id !== undefined && !others.some((entry) => entry.id === row.id)) {
+                others.push({ id: row.id, display: row.display });
+              }
+              continue;
+            }
+            if (voltageOf(row) !== voltage) continue;
+            const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
+            if (other && !spans.some((entry) => entry.other === other)) spans.push({ other, id: row.id });
+          }
+        }
+        if (spans.length > 0 || others.length > 0) break;
+      }
+      return { spans, others };
+    };
+
+    /**
+     * Does the line still feeding this pole come from here?
+     *
+     * Follows one direction until a source, a line end (remate) or the hop limit.
+     * "si" feeds the pole, "no" is a dead end, "desconocido" is not evidence.
+     */
+    const walkToSource = async (fromCode, towards, hopsLimit) => {
+      let previous = fromCode;
+      let current = towards;
+      for (let hop = 0; hop < hopsLimit; hop += 1) {
+        if (!canSpend()) return "desconocido";
+        if (cut.has(current)) return "no";
+        const point = await resolvePoint(current);
+        if (!point) return "desconocido";
+        const here = await ringObjects(point, current);
+        // A source sits at a pole as its own object, not on the span itself.
+        if (settings.readSources) {
+          for (const other of here.others) {
+            if (!canSpend()) return "desconocido";
+            try {
+              const title = safeText(await spend(() => client.objectTitle(other.id)));
+              if (SOURCE_TITLE.test(title)) return "si";
+            } catch (error) {
+              // an unreadable title is not a source
+            }
+          }
+        }
+        const forward = here.spans.find((entry) => entry.other !== previous) || null;
+        if (!forward) return "no";
+        previous = current;
+        current = forward.other;
+      }
+      return "desconocido";
+    };
+
+    /**
+     * Which side of an opening pole is still fed.
+     *
+     * Radial: opening the source side kills the pole, opening the far side leaves
+     * it as a live dead-end. Looped: a second source keeps it alive either way.
+     */
+    const stateOfOpening = async (entry) => {
+      const point = await resolvePoint(entry.code);
+      if (!point) {
+        return { code: entry.code, side: entry.side, sides: [], live: "desconocido", reason: "el poste no resolvió a un punto" };
+      }
+      const spans = (await ringObjects(point, entry.code)).spans;
+      if (spans.length === 0) {
+        return { code: entry.code, side: entry.side, sides: [], live: "desconocido", reason: "no se hallaron tramos MT en ese poste" };
+      }
+      const sides = [];
+      for (const span of spans) {
+        sides.push({ towards: span.other, reachesSource: await walkToSource(entry.code, span.other, settings.maxSourceHops) });
+      }
+      const reaching = sides.filter((side) => side.reachesSource === "si").length;
+      const dead = sides.every((side) => side.reachesSource === "no");
+      const unknown = sides.some((side) => side.reachesSource === "desconocido");
+
+      if (entry.side === "both") {
+        return { code: entry.code, side: entry.side, sides, live: "no", reason: "ambos lados abiertos: el poste queda aislado" };
+      }
+      if (dead) {
+        return { code: entry.code, side: entry.side, sides, live: "no", reason: "ningún lado alcanza una fuente: el poste queda sin tensión" };
+      }
+      if (reaching >= 2) {
+        return { code: entry.code, side: entry.side, sides, live: "si", reason: "el otro lado sigue alimentado: red anillada" };
+      }
+      if (unknown) {
+        return { code: entry.code, side: entry.side, sides, live: "desconocido", reason: "no se pudo completar la traza hacia el fuente" };
+      }
+      if (entry.side === "a") {
+        return { code: entry.code, side: entry.side, sides, live: "no", reason: "se abre el lado que alimenta: el poste y todo aguas abajo quedan sin tensión" };
+      }
+      if (entry.side === "b") {
+        return { code: entry.code, side: entry.side, sides, live: "si", reason: "se abre el lado de aguas abajo: el poste queda como remate energizado" };
+      }
+      return { code: entry.code, side: entry.side, sides, live: "si", reason: "un lado sigue alcanzando una fuente y no se indicó cuál se abre" };
+    };
+
     const resolvePoint = async (code) => {
       if (!canSpend()) return null;
       let rows = [];
@@ -479,30 +595,27 @@
     for (const code of opened) roles.set(code, roles.get(code) === "trabajo" ? "ambos" : "apertura");
 
     const islandClosed = sources.length === 0 && !incomplete && boundary.length > 0;
-    const poleStates = [...roles.entries()].map(([code, role]) => {
+    const poleStates = [];
+    for (const [code, role] of roles.entries()) {
       if (role === "apertura" || role === "ambos") {
-        const side = sideOf.get(code) || "desconocido";
-        if (side === "both") {
-          return { code, role, live: "no", reason: "ambos lados abiertos: el poste queda aislado" };
-        }
-        return {
+        const entry = openings.find((item) => item.code === code) || { code, side: "desconocido" };
+        const state = await stateOfOpening(entry);
+        poleStates.push(Object.assign({ role }, state));
+      } else {
+        poleStates.push({
           code,
           role,
-          live: "desconocido",
-          reason:
-            side === "desconocido"
-              ? "el aparato corta un solo lado y no se indicó cuál: el lado opuesto puede seguir energizado"
-              : `se abre el lado ${side}: el lado opuesto puede seguir energizado`,
-        };
+          live: islandClosed ? "no" : "desconocido",
+          reason: islandClosed ? "dentro de la isla cerrada" : "la isla no cerró: no puede afirmarse que esté sin tensión",
+        });
       }
-      return {
-        code,
-        role,
-        live: islandClosed ? "no" : "desconocido",
-        reason: islandClosed ? "dentro de la isla cerrada" : "la isla no cerró: no puede afirmarse que esté sin tensión",
-      };
-    });
+    }
     const liveWorkPoles = poleStates.filter((entry) => entry.role !== "apertura" && entry.live !== "no");
+    // A live boundary pole is normal — it is the dead-end that feeds nothing — but
+    // the crew must know it stays energised.
+    const warnings = poleStates
+      .filter((entry) => entry.live === "si")
+      .map((entry) => `${entry.code} queda con tensión (${entry.reason})`);
 
     if (work.some((code) => !cut.has(code)) && seenPoints.size === 0) {
       reason = "ningún poste de trabajo resolvió a un punto";
@@ -530,6 +643,7 @@
       opened,
       openings,
       poleStates,
+      warnings,
       voltage,
       island: [...island],
       boundary,
@@ -541,7 +655,7 @@
   }
 
   return {
-    version: "1.2.0",
+    version: "1.3.0",
     findWorkZone,
     verifyAperturas,
     parseOperatingState,

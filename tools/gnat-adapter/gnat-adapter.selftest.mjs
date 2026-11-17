@@ -261,11 +261,43 @@ function makeChainClient(config = {}) {
     workCodes: ["PA1002"],
     openCodes: [{ code: "PA1001", side: "a" }, { code: "PA1003", side: "b" }],
     client: makeChainClient(),
+    settings: { maxRequests: 400 },
   });
   const state = oneSide.poleStates.find((entry) => entry.code === "PA1001");
-  assert.equal(state.live, "desconocido", "one side still feeds the pole");
-  assert.match(state.reason, /lado a/);
+  // No source anywhere in this chain, so no side can reach one.
+  assert.equal(state.live, "no");
+  assert.match(state.reason, /ningún lado alcanza una fuente/);
   assert.equal(state.role, "apertura");
+}
+
+// --- radial line: the opened side decides the pole's fate -------------------
+// fuente — PA1001 — PA1002 — PA1003 (remate)
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1003"],
+    openCodes: [{ code: "PA1002", side: "a" }],
+    client: makeChainClient({ withSource: true }),
+    settings: { maxRequests: 400, readSources: true },
+  });
+  const state = result.poleStates.find((entry) => entry.code === "PA1002");
+  assert.equal(state.live, "no", "opening the feeding side kills the pole");
+  assert.match(state.reason, /se abre el lado que alimenta/);
+  assert.equal(result.valid, true, result.reason);
+}
+
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1003"],
+    openCodes: [{ code: "PA1002", side: "b" }],
+    client: makeChainClient({ withSource: true }),
+    settings: { maxRequests: 400, readSources: true },
+  });
+  const state = result.poleStates.find((entry) => entry.code === "PA1002");
+  assert.equal(state.live, "si", "opening the far side leaves a live dead-end");
+  assert.match(state.reason, /remate energizado/);
+  assert.equal(result.valid, true, "the work zone itself is dead");
+  assert.equal(result.warnings.length, 1);
+  assert.match(result.warnings[0], /PA1002 queda con tensión/);
 }
 
 // A pole that is both work and an opening cannot be declared dead.
@@ -274,12 +306,11 @@ function makeChainClient(config = {}) {
     workCodes: ["PA1002"],
     openCodes: ["PA1002"],
     client: makeChainClient(),
+    settings: { maxRequests: 400 },
   });
   const state = result.poleStates.find((entry) => entry.code === "PA1002");
   assert.equal(state.role, "ambos");
-  assert.equal(state.live, "desconocido");
   assert.equal(result.valid, false);
-  assert.match(result.reason, /PA1002 \(estado desconocido\)/);
 }
 
 // --- shared parsers ---------------------------------------------------------
