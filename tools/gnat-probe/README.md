@@ -31,8 +31,9 @@ medium-voltage network:
 4. Run it:
 
 ```js
-await __gnatProbe.run()                  // defaults: F51757, F61655, F514139
-await __gnatProbe.run(["F51757"])        // or the poles you have at hand
+await __gnatProbe.run()                  // default: F51757
+await __gnatProbe.run(["F517570"])       // codes you have at hand
+await __gnatProbe.run([9446883])         // numeric object ids, skipping the search
 ```
 
 5. Copy the report and send it back:
@@ -49,6 +50,18 @@ __gnatProbe.env()        // confirms you are in the right frame
 __gnatProbe.report       // live report object
 ```
 
+## Codes are prefixes, not exact matches
+
+`textual_search` matches a **prefix**, so asking for `F51757` returns the
+substation `F51757 (Subestación MT/BT)` *plus* every pole in that family
+(`F517570`–`F517577`) and the devices mounted on them. The probe reports the full
+classification in `targetPlan.classified`, skips substations (they have no Point
+geometry) and moves on to the first pole-like candidate. If you want a specific
+pole, pass its full code or its numeric id.
+
+Every candidate is also reported with `exactPrefix`, so a prefix hit is never
+silently treated as an exact one.
+
 ## What it does, step by step
 
 For each code:
@@ -56,7 +69,7 @@ For each code:
 1. **Resolve** — `textual_search` with round-trip variants (`F51757` → `51757` →
    `FF51757`), keeping all candidates.
 2. **Locate** — `get_objects_geojson` on the candidate ids to obtain the official
-   point coordinate.
+   point coordinate. Fall back to `pin_location` when an object has no geometry.
 3. **Inventory the pole** — `get_objects_info_for_point` at that coordinate, then
    classify every returned object as span / device / node / pole.
 4. **Vectorise spans** — `get_objects_geojson` on every span id, recording
@@ -72,11 +85,26 @@ For each code:
 Remote HTML is always converted to **inert text**; the probe never assigns it to
 `innerHTML` and never executes remote JS or widget actions.
 
+## Field findings that shaped version 1.1.0
+
+The first real run of code `F51757` produced no point query and two defects,
+both now pinned by the self-test:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `"JSON value is not numeric"` | Object ids were sent as strings; GNAT requires JSON integers | Ids are normalised to numbers and an unusable id is reported, never silently coerced |
+| Probe gave up on the first candidate | `F51757` is a *Subestación MT/BT* with `geometry: null`, and the probe stopped there | Candidates are ordered (poles first, substations and devices excluded) and the walk continues until one yields a Point |
+
+The same run also showed that `textual_search` already returns the switching
+devices with their own codes (`F517572 (Desconectador Fusible Empresa)`,
+`F517573 [F59840] (Desconectador Fusible Empresa)`), so version 1.1.0 probes those
+too: geometry, ficha and DMS section 23 for each.
+
 ## Report shape
 
 ```jsonc
 {
-  "probeVersion": "1.0.0",
+  "probeVersion": "1.1.0",
   "viewport": { "projection": "EPSG:3857", "zoom": 16, "usesViewportParams": true },
   "cases": [{ "code": "F51757", "resolved": {}, "pointQuery": {}, "spanGeometries": {}, "devices": [], "electricalSection": {}, "summary": {} }],
   "verdict": {

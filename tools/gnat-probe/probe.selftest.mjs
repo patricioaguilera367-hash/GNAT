@@ -5,8 +5,14 @@
  * (resolve → geometry → point query → span geometries → device widgets →
  * DMS section 23 → summary) is exercised without touching a real GNAT session.
  *
- * The fixtures reproduce only the shapes already observed in the context
- * transcripts, plus the MT/AP shapes the probe exists to confirm.
+ * Fixtures reproduce the first real field run of code `F51757`, which found two
+ * defects that these assertions now pin:
+ *
+ *   1. object ids sent as strings are rejected by the backend with
+ *      "JSON value is not numeric" — the stub fails the request in that case,
+ *      exactly like GNAT;
+ *   2. `F51757` is a *Subestación MT/BT* with no Point geometry, so the probe
+ *      must fall through to the first pole-like candidate instead of giving up.
  *
  *   node tools/gnat-probe/probe.selftest.mjs
  */
@@ -19,58 +25,63 @@ import assert from "node:assert/strict";
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(join(here, "probe-mt-aperturas.js"), "utf8");
 
-const POLE_ID = 3687560;
+const SUBESTACION_ID = 4550468;
+const POLE_ID = 5207841;
+const DBC_ID = 9446883;
 const SPAN_MT_1 = 900001;
 const SPAN_MT_2 = 900002;
-const DBC_ID = 777001;
 
-const logLines = [];
+const POLE_LONLAT = [-72.812867652, -37.912094564];
 
-/** Responses keyed by the action the probe issues. */
-const fixtures = {
-  textual_search: [
-    {
-      object_id: POLE_ID,
-      surrogate_in_map_id: POLE_ID,
-      pin_location: null,
-      display: "F51757 (Postes c.a. 10 m 350 Kg/Rup cte. comun con BT)",
-    },
-  ],
-  get_objects_geojson: null, // resolved per requested ids
-  get_objects_info_for_point: [
-    {
-      id: SPAN_MT_1,
-      display: "F51757 - F51800",
-      type: "Tramo Aéreo MT",
-      description: "<table><tr><td>Alimentador</td><td>Angol-Los Sauces [S203]</td></tr></table>",
-    },
-    {
-      id: SPAN_MT_2,
-      display: "F51757 - F51600",
-      type: "Tramo Aéreo MT",
-      description: "<table><tr><td>Alimentador</td><td>Angol-Los Sauces [S203]</td></tr></table>",
-    },
-    { id: 3660863, display: "3660863", type: "Nodo de Baja Tensión", description: "" },
-    {
-      id: POLE_ID,
-      display: "F51757",
-      type: "Postes c.a. 10 m 350 Kg/Rup cte. comun con BT",
-      description: "<table><tr><td>Voltaje</td><td>400</td></tr></table>",
-    },
-    { id: DBC_ID, display: "F51757", type: "Interruptor seccionador (DBC)", description: "" },
-  ],
-};
+/** Same shape the real `textual_search` returned for `F51757`. */
+const SEARCH_CANDIDATES = [
+  { object_id: SUBESTACION_ID, surrogate_in_map_id: SUBESTACION_ID, pin_location: null, display: "F51757 (Subestación MT/BT)" },
+  {
+    object_id: POLE_ID,
+    surrogate_in_map_id: POLE_ID,
+    pin_location: null,
+    display: "F517570 (Postes c.a. 11.5 m 350 Kg/Rup cte. comun con BT)",
+  },
+  { object_id: 5460168, surrogate_in_map_id: 5460168, pin_location: null, display: "F517571 (Postes c.a. 10 m  350 Kg/Rup cte. comun con BT)" },
+  { object_id: 4989672, surrogate_in_map_id: 4989672, pin_location: null, display: "F517572 (Postes c.a. 11.5 m 350 Kg/Rup cte. comun con BT)" },
+  { object_id: DBC_ID, surrogate_in_map_id: DBC_ID, pin_location: null, display: "F517572 (Desconectador Fusible Empresa)" },
+  { object_id: 8347637, surrogate_in_map_id: 8347637, pin_location: null, display: "F517573 [F59840] (Eq.protección BT1 Fas.5KVA)" },
+  { object_id: 8347676, surrogate_in_map_id: 8347676, pin_location: null, display: "F517573 [F59840] (Desconectador Fusible Empresa)" },
+];
+
+const POINT_OBJECTS = [
+  { id: SPAN_MT_1, display: "F517570 - F517572", type: "Tramo Aéreo MT", description: "<table><tr><td>Alimentador</td><td>Angol-Los Sauces [S203]</td></tr></table>" },
+  { id: SPAN_MT_2, display: "F517570 - F517571", type: "Tramo Aéreo MT", description: "<table><tr><td>Alimentador</td><td>Angol-Los Sauces [S203]</td></tr></table>" },
+  { id: 3660863, display: "3660863", type: "Nodo de Baja Tensión", description: "" },
+  { id: POLE_ID, display: "F517570", type: "Postes c.a. 11.5 m 350 Kg/Rup cte. comun con BT", description: "<table><tr><td>Voltaje</td><td>400</td></tr></table>" },
+];
+
+const requests = [];
+
+/** Fail exactly like GNAT when an id is not a JSON number. */
+function assertNumericIds(params) {
+  const ids = JSON.parse(params.object_ids);
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== "number")) {
+    throw new Error("JSON value is not numeric");
+  }
+  return ids;
+}
 
 function geoJsonFor(ids) {
-  const features = ids.map((rawId) => {
-    const id = String(rawId);
-    if (id === String(POLE_ID)) {
+  const features = ids.map((id) => {
+    if (id === SUBESTACION_ID) {
+      // A substation is not a cartographic point: geometry is null.
+      return { type: "Feature", geometry: null, id, properties: { display_name: "F51757" } };
+    }
+    if (id === POLE_ID || id === DBC_ID) {
+      // A device is a cartographic point too, just offset from the pole.
+      const coords = id === POLE_ID ? POLE_LONLAT : [POLE_LONLAT[0] + 0.0001, POLE_LONLAT[1] + 0.0001];
       return {
         type: "Feature",
-        geometry: { type: "Point", coordinates: [-72.812867652, -37.912094564] },
-        id: POLE_ID,
-        properties: { display_name: "F51757" },
-        bbox: [-72.812867652, -37.912094564, -72.812867652, -37.912094564],
+        geometry: { type: "Point", coordinates: coords },
+        id,
+        properties: { display_name: id === POLE_ID ? "F517570" : "F517572" },
+        bbox: [coords[0], coords[1], coords[0], coords[1]],
       };
     }
     return {
@@ -79,21 +90,20 @@ function geoJsonFor(ids) {
         type: "LineString",
         coordinates: [
           [-72.8128, -37.912],
-          [-72.8130, -37.9125],
+          [-72.813, -37.9125],
         ],
       },
-      id: Number(id),
-      properties: { display_name: "F51757 - F51800" },
-      bbox: [-72.8130, -37.9125, -72.8128, -37.912],
+      id,
+      properties: { display_name: "F517570 - F517572" },
+      bbox: [-72.813, -37.9125, -72.8128, -37.912],
     };
   });
   return features.length === 1 ? features[0] : { type: "FeatureCollection", features };
 }
 
 function widgetDefinitionFor(objectId) {
-  assert.equal(objectId, DBC_ID, "definition must be requested for the switching device");
   return {
-    title: "Interruptor seccionador (DBC)",
+    title: `Objeto ${objectId}`,
     message_error: null,
     widget_definition: {
       header_widgets: [{ id: 5, title: "IDs" }],
@@ -107,24 +117,19 @@ function widgetDefinitionFor(objectId) {
   };
 }
 
-const requests = [];
-
 function fakeAcsRequest(options) {
   const { url, params, success, failure } = options;
   requests.push({ url, action: params && params.action, params });
   try {
     if (url === "svc_wmc.php") {
-      if (params.action === "textual_search") return void success(fixtures.textual_search);
-      if (params.action === "get_objects_geojson") {
-        return void success(geoJsonFor(JSON.parse(params.object_ids)));
-      }
-      if (params.action === "get_objects_info_for_point") return void success(fixtures.get_objects_info_for_point);
+      if (params.action === "textual_search") return void success(SEARCH_CANDIDATES);
+      if (params.action === "get_objects_geojson") return void success(geoJsonFor(assertNumericIds(params)));
+      if (params.action === "get_objects_info_for_point") return void success(POINT_OBJECTS);
       return void failure(new Error(`unexpected wmc action ${params.action}`));
     }
     if (url === "Web/component/svc_object_view.php") {
-      if (params.action === "get_object_definition") {
-        return void success(widgetDefinitionFor(Number(params.object_id)));
-      }
+      if (typeof params.object_id !== "number") throw new Error("object_id must be numeric");
+      if (params.action === "get_object_definition") return void success(widgetDefinitionFor(params.object_id));
       if (params.action === "get_widget_content") {
         return void success(
           params.widget_ids.map((widgetId) => ({
@@ -139,6 +144,7 @@ function fakeAcsRequest(options) {
       return void failure(new Error(`unexpected object_view action ${params.action}`));
     }
     if (url === "elec_addons_cm_object_data_section.php") {
+      if (typeof params.object_id !== "number") throw new Error("object_id must be numeric");
       return void success(
         "<h3>Vecinos</h3><table><tr><td>Nodo de Baja Tensión</td><td>-</td></tr></table>" +
           "<h3>Comportamiento de red por fase</h3>" +
@@ -154,7 +160,7 @@ function fakeAcsRequest(options) {
 const view = {
   getProjection: () => ({ getCode: () => "EPSG:3857" }),
   getCenter: () => [0, 0],
-  getZoom: () => 15,
+  getZoom: () => 15.114949744876553,
   getResolution: () => 2.4,
   setCenter: () => {},
   setZoom: () => {},
@@ -162,12 +168,7 @@ const view = {
 };
 
 const sandbox = {
-  console: {
-    info: (...args) => logLines.push(["info", ...args]),
-    warn: (...args) => logLines.push(["warn", ...args]),
-    error: (...args) => logLines.push(["error", ...args]),
-    log: () => {},
-  },
+  console: { info: () => {}, warn: () => {}, error: () => {}, log: () => {} },
   document: { querySelector: () => null },
   navigator: { clipboard: { writeText: async () => {} } },
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
@@ -201,10 +202,10 @@ assert.deepEqual(plain(probe.env()), {
   hasMap: true,
   hasAcs: true,
   hasExt: true,
-  zoom: 15,
+  zoom: 15.114949744876553,
 });
 
-// --- the probe run ----------------------------------------------------------
+// --- the field run that failed ---------------------------------------------
 const report = await probe.run(["F51757"]);
 
 assert.equal(report.errors.length, 0, `probe reported errors: ${JSON.stringify(report.errors)}`);
@@ -213,27 +214,50 @@ assert.equal(report.cases.length, 1);
 const poleCase = report.cases[0];
 const summary = poleCase.summary;
 
+// Bug 2: the substation has no Point, so the probe must move on to a pole.
+assert.equal(poleCase.targetPlan.substations.length, 1);
+assert.equal(summary.pointFound, true);
 assert.equal(poleCase.resolved.objectId, POLE_ID);
-assert.deepEqual(plain(poleCase.resolved.lonlat), { lon: -72.812867652, lat: -37.912094564 });
+assert.deepEqual(plain(poleCase.resolved.lonlat), { lon: POLE_LONLAT[0], lat: POLE_LONLAT[1] });
+assert.equal(poleCase.geometryAttempts.length, 1, "only the substation may be skipped before a pole answers");
+
+// Bug 1: every geometry request must carry numeric ids.
+const geometryCalls = requests.filter((entry) => entry.action === "get_objects_geojson");
+assert.ok(geometryCalls.length > 0);
+for (const call of geometryCalls) {
+  const ids = JSON.parse(call.params.object_ids);
+  assert.ok(Array.isArray(ids), "object_ids must be a JSON array");
+  for (const id of ids) assert.equal(typeof id, "number", `id ${JSON.stringify(id)} must be a number`);
+}
 
 // U1: MT spans expose endpoint codes and have LineString geometry.
-assert.equal(summary.spansFound, 2, "both MT spans must be classified as spans");
+assert.equal(summary.spansFound, 2);
 assert.equal(summary.everySpanDisplayParses, true);
-assert.deepEqual(plain(summary.spanDisplays[0].variants["space-hyphen-space"]), ["F51757", "F51800"]);
+assert.deepEqual(plain(summary.spanDisplays[0].variants["space-hyphen-space"]), ["F517570", "F517572"]);
 assert.equal(summary.lineStringsReturned, 2);
-assert.equal(summary.twoVertexLineStrings, 2, "each MT span must come back as a 2-vertex LineString");
+assert.equal(summary.twoVertexLineStrings, 2);
 assert.deepEqual(plain(summary.spanTypes), ["Tramo Aéreo MT"]);
 
-// U2: the switching device is visible on the pole and its state is readable.
-assert.equal(summary.devicesFound, 1);
-assert.deepEqual(plain(summary.deviceTypes), ["Interruptor seccionador (DBC)"]);
+// U2: devices found through the search list are probed and carry state.
+assert.equal(summary.devicesOnPole, 0, "this pole has no device mounted on it");
+assert.equal(summary.devicesFromSearch, 3);
 assert.equal(summary.hasStateEvidence, true);
+const evidenceSources = plain(summary.stateEvidence.map((item) => item.source)).sort();
+assert.deepEqual(evidenceSources, [
+  "device_dms_section_23",
+  "device_dms_section_23",
+  "device_dms_section_23",
+  "dms_section_23",
+  "widget_content",
+  "widget_content",
+  "widget_content",
+]);
 
-const evidenceSources = summary.stateEvidence.map((item) => item.source).sort();
-assert.deepEqual(plain(evidenceSources), ["dms_section_23", "widget_content"]);
-
-// The pole itself must not be mistaken for a device.
-assert.equal(poleCase.pointQuery.objects.filter((item) => item.isDevice).length, 1);
+// The substation must never be mistaken for a pole, a device or a span.
+const classifiedSubstation = poleCase.targetPlan.classified.find((entry) => entry.id === SUBESTACION_ID);
+assert.equal(classifiedSubstation.isSubstation, true);
+assert.equal(classifiedSubstation.isPole, false);
+assert.equal(classifiedSubstation.isDevice, false);
 
 // --- verdict ----------------------------------------------------------------
 assert.deepEqual(plain(report.verdict), {
@@ -242,6 +266,7 @@ assert.deepEqual(plain(report.verdict), {
   u2_devicesAreVisibleOnPole: true,
   u2_deviceStateIsReadable: true,
   everySpanDisplayParses: true,
+  anyPointFound: true,
 });
 
 // --- read-only guarantees ---------------------------------------------------
@@ -255,10 +280,20 @@ assert.deepEqual(calledUrls, [
 const calledWmcActions = [...new Set(requests.filter((r) => r.url === "svc_wmc.php").map((r) => r.action))].sort();
 assert.deepEqual(calledWmcActions, ["get_objects_geojson", "get_objects_info_for_point", "textual_search"]);
 
-// Every request must carry the live viewport params merged in.
 for (const entry of requests.filter((r) => r.url === "svc_wmc.php")) {
   assert.equal(entry.params.scale, 1000, "viewport params must be merged into wmc requests");
 }
+
+// --- direct id probing ------------------------------------------------------
+requests.length = 0;
+const byId = await probe.run([DBC_ID]);
+assert.equal(byId.errors.length, 0, `direct id probe errors: ${JSON.stringify(byId.errors)}`);
+assert.equal(byId.cases[0].objectId, DBC_ID);
+assert.equal(byId.verdict.anyPointFound, true);
+assert.ok(
+  requests.every((entry) => !entry.params.object_ids || JSON.parse(entry.params.object_ids).every((id) => typeof id === "number")),
+  "direct id probing must also send numeric ids"
+);
 
 // --- report shape -----------------------------------------------------------
 const serialized = probe.json();
