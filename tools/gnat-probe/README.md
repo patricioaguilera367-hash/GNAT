@@ -36,12 +36,19 @@ await __gnatProbe.run(["F517570"])       // codes you have at hand
 await __gnatProbe.run([9446883])         // numeric object ids, skipping the search
 ```
 
-5. Copy the report and send it back:
+5. Copy the digest and send it back:
 
 ```js
-__gnatProbe.copy()                       // to clipboard
-__gnatProbe.json()                       // or paste from the console
+__gnatProbe.copySummary()                // verdict + per-case answers (small)
+__gnatProbe.summaryJson()                // same, printed
+__gnatProbe.copy()                       // full report, only when debugging
+__gnatProbe.json()                       // full report, printed
 ```
+
+`copySummary()` is the default round trip: it keeps `verdict`, `resolved`,
+`geometryAttempts`, the target plan and every case `summary` (span displays,
+device types, state evidence), and drops only the bulk — raw widget text and
+per-feature geometry — which is what `copy()` is for.
 
 Useful while troubleshooting:
 
@@ -85,7 +92,7 @@ For each code:
 Remote HTML is always converted to **inert text**; the probe never assigns it to
 `innerHTML` and never executes remote JS or widget actions.
 
-## Field findings that shaped version 1.1.0
+## Field findings that shaped version 1.1.0 and 1.2.0
 
 The first real run of code `F51757` produced no point query and two defects,
 both now pinned by the self-test:
@@ -100,11 +107,16 @@ devices with their own codes (`F517572 (Desconectador Fusible Empresa)`,
 `F517573 [F59840] (Desconectador Fusible Empresa)`), so version 1.1.0 probes those
 too: geometry, ficha and DMS section 23 for each.
 
+Version 1.2.0 added `copySummary()` (the full report is ~40 KB of JSON for one
+code) and fixed a third defect the self-test caught: devices probed *on the pole*
+kept their ficha but were dropped from the state-evidence collection, so a pole
+with a mounted switch would have reported `hasStateEvidence: false`.
+
 ## Report shape
 
 ```jsonc
 {
-  "probeVersion": "1.1.0",
+  "probeVersion": "1.2.0",
   "viewport": { "projection": "EPSG:3857", "zoom": 16, "usesViewportParams": true },
   "cases": [{ "code": "F51757", "resolved": {}, "pointQuery": {}, "spanGeometries": {}, "devices": [], "electricalSection": {}, "summary": {} }],
   "verdict": {

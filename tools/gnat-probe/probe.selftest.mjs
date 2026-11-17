@@ -284,6 +284,28 @@ for (const entry of requests.filter((r) => r.url === "svc_wmc.php")) {
   assert.equal(entry.params.scale, 1000, "viewport params must be merged into wmc requests");
 }
 
+// --- report shape -----------------------------------------------------------
+const serialized = probe.json();
+assert.ok(serialized.length > 1000);
+assert.equal(JSON.parse(serialized).verdict.u1_spansHaveLineStringGeometry, true);
+
+// The digest must keep every decision input while staying small enough to paste.
+const digest = probe.summaryJson();
+assert.ok(digest.length > 200, "digest must not be empty");
+assert.ok(digest.length < serialized.length, "digest must be smaller than the full report");
+
+const digestObject = JSON.parse(digest);
+assert.equal(digestObject.verdict.u1_spansHaveLineStringGeometry, true);
+assert.equal(digestObject.verdict.anyPointFound, true);
+assert.equal(digestObject.cases.length, 1);
+assert.equal(digestObject.cases[0].summary.hasStateEvidence, true);
+assert.deepEqual(plain(digestObject.cases[0].summary.spanTypes), ["Tramo Aéreo MT"]);
+assert.equal(digestObject.cases[0].summary.stateEvidence.length, 7);
+
+// The digest drops the bulk (widget text, per-feature geometry) but not the answers.
+assert.ok(!digest.includes("sin cambios"), "digest must not carry raw widget text");
+assert.ok(!digest.includes("objectViewRequested"), "digest must not carry request bookkeeping");
+
 // --- direct id probing ------------------------------------------------------
 requests.length = 0;
 const byId = await probe.run([DBC_ID]);
@@ -294,10 +316,5 @@ assert.ok(
   requests.every((entry) => !entry.params.object_ids || JSON.parse(entry.params.object_ids).every((id) => typeof id === "number")),
   "direct id probing must also send numeric ids"
 );
-
-// --- report shape -----------------------------------------------------------
-const serialized = probe.json();
-assert.ok(serialized.length > 1000);
-assert.equal(JSON.parse(serialized).verdict.u1_spansHaveLineStringGeometry, true);
 
 console.log("probe.selftest: OK — probe pipeline verified against a stubbed GNAT window");

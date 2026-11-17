@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.2.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -761,7 +761,9 @@
     const spanGeom = (poleCase.spanGeometries && poleCase.spanGeometries.features) || [];
     const lineStrings = spanGeom.filter((feature) => feature.geometryType === "LineString");
 
-    const allDevices = [...poleDevices, ...(poleCase.searchDevices || [])];
+    // `poleCase.devices` holds the probed definitions; the raw point-query flags
+    // carry no ficha, so they are only used for counting.
+    const allDevices = [...(poleCase.devices || []), ...(poleCase.searchDevices || [])];
     const stateEvidence = collectStateEvidence(allDevices, poleCase.electricalSection);
 
     return {
@@ -1005,23 +1007,58 @@
 
   const json = () => JSON.stringify(report, null, 2);
 
-  async function copy() {
-    const payload = json();
+  /**
+   * Bounded digest: the verdict plus what actually answers U1 and U2 per case.
+   * The full report keeps every geometry attempt and widget text; this one is
+   * what fits in a pasted message without losing a single decision input.
+   */
+  const summaryJson = () =>
+    JSON.stringify(
+      {
+        probeVersion: VERSION,
+        viewport: report.viewport,
+        verdict: report.verdict,
+        errors: report.errors,
+        cases: report.cases.map((entry) => ({
+          code: entry.code,
+          resolved: entry.resolved,
+          geometryAttempts: entry.geometryAttempts,
+          targetPlan: entry.targetPlan
+            ? {
+                poleTargets: entry.targetPlan.poleTargets,
+                deviceTargets: entry.targetPlan.deviceTargets,
+                substations: entry.targetPlan.substations,
+              }
+            : null,
+          summary: entry.summary,
+        })),
+      },
+      null,
+      2
+    );
+
+  async function copyWith(payload, label) {
     try {
       await navigator.clipboard.writeText(payload);
-      console.info(`[gnatProbe] report copied (${payload.length} chars).`);
+      console.info(`[gnatProbe] ${label} copied (${payload.length} chars).`);
       return true;
     } catch (error) {
-      console.warn("[gnatProbe] clipboard unavailable; use `__gnatProbe.json()` and copy from the console.", error);
+      console.warn(`[gnatProbe] clipboard unavailable for ${label}; read it from the console instead.`, error);
       return false;
     }
   }
+
+  const copy = () => copyWith(json(), "report");
+
+  const copySummary = () => copyWith(summaryJson(), "summary");
 
   window.__gnatProbe = {
     version: VERSION,
     run,
     json,
+    summaryJson,
     copy,
+    copySummary,
     report,
     /** Re-read the environment only; useful to confirm you are in the right frame. */
     env() {
@@ -1038,6 +1075,6 @@
   };
 
   console.info(
-    `[gnatProbe] v${VERSION} loaded. Next: await __gnatProbe.run()  →  __gnatProbe.copy()  (defaults: ${DEFAULT_CODES.join(", ")})`
+    `[gnatProbe] v${VERSION} loaded. Next: await __gnatProbe.run()  →  __gnatProbe.copySummary()  (defaults: ${DEFAULT_CODES.join(", ")})`
   );
 })();
