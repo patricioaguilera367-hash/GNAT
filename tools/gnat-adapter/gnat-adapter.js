@@ -654,8 +654,209 @@
     };
   }
 
+  /** Convex hull, so the zone has an outline and not just a list of poles. */
+  const convexHull = (points) => {
+    const pts = [...points].sort((a, b) => a.lon - b.lon || a.lat - b.lat);
+    if (pts.length < 3) return pts.map((p) => [p.lon, p.lat]);
+    const cross = (o, a, b) => (a.lon - o.lon) * (b.lat - o.lat) - (a.lat - o.lat) * (b.lon - o.lon);
+    const lower = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i -= 1) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pts[i]) <= 0) upper.pop();
+      upper.push(pts[i]);
+    }
+    return lower.slice(0, -1).concat(upper.slice(0, -1)).map((p) => [p.lon, p.lat]);
+  };
+
+  /**
+   * Rebuild a hand-written permit from the network and compare the two.
+   *
+   * The supervisor already decided the work zone and the openings. This resolves
+   * every declared code, rebuilds the spans, devices, outline and labels around
+   * it, runs the verification, and reports where the permit and the network
+   * disagree.
+   */
+  async function auditPermit(options) {
+    const opts = options || {};
+    const client = opts.client || {};
+    const permit = opts.permit || {};
+    const settings = Object.assign({}, DEFAULTS, opts.settings || {});
+    const voltage = safeText(opts.voltage || "mt").toLowerCase();
+
+    const started = Date.now();
+    const used = { requests: 0 };
+    const canSpend = () => used.requests < settings.maxRequests && Date.now() - started < settings.maxMilliseconds;
+    const spend = async (fn) => {
+      used.requests += 1;
+      return fn();
+    };
+
+    const declared = [];
+    const declare = (codes, role) => {
+      for (const raw of codes || []) {
+        const code = safeText(typeof raw === "string" ? raw : raw && raw.code).trim().toUpperCase();
+        if (code && !declared.some((entry) => entry.code === code)) declared.push({ code, role });
+      }
+    };
+    declare([permit.objectCode], "objeto");
+    declare(permit.workCodes, "trabajo");
+    declare(permit.openCodes, "apertura");
+    declare(permit.groundCodes, "puesta a tierra");
+    declare(permit.siteCodes, "punto de faenas");
+
+    const resolve = async (code) => {
+      if (!canSpend()) return null;
+      let rows = [];
+      try {
+        rows = (await spend(() => client.search(code))) || [];
+      } catch (error) {
+        rows = [];
+      }
+      const exact = (Array.isArray(rows) ? rows : []).filter((row) => codeOf(row && row.display) === code);
+      for (const row of exact) {
+        const ids = [Number(row.surrogate_in_map_id), Number(row.object_id)].filter(
+          (id, index, all) => Number.isFinite(id) && all.indexOf(id) === index
+        );
+        for (const id of ids) {
+          if (!canSpend()) return null;
+          try {
+            const payload = await spend(() => client.geojson([id]));
+            const point = featureList(payload).map(pointOfFeature).find(Boolean);
+            if (point) return { point, objectId: Number(row.object_id), display: row.display, matches: exact.length };
+          } catch (error) {
+            // try the next id
+          }
+        }
+      }
+      return exact.length > 0 ? { point: null, objectId: Number(exact[0].object_id), display: exact[0].display, matches: exact.length } : null;
+    };
+
+    const ring = async (point, code) => {
+      const spans = [];
+      const others = [];
+      for (const radius of settings.radiiMeters) {
+        for (let index = 0; index < settings.bearings; index += 1) {
+          if (!canSpend()) return { spans, others, complete: false };
+          const bearing = (2 * Math.PI * index) / settings.bearings;
+          const sample = offsetOf(point.lon, point.lat, radius, bearing);
+          let rows = [];
+          try {
+            rows = (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
+          } catch (error) {
+            continue;
+          }
+          for (const row of Array.isArray(rows) ? rows : []) {
+            const pair = codePairOf(row && row.display);
+            if (!pair) {
+              if (row && row.id !== undefined && !others.some((entry) => entry.id === row.id)) {
+                others.push({ id: row.id, display: row.display, type: row.type });
+              }
+              continue;
+            }
+            if (voltageOf(row) !== voltage) continue;
+            const display = safeText(row.display);
+            if (!spans.some((entry) => entry.display === display)) {
+              spans.push({ id: row.id, from: pair[0], to: pair[1], display, voltage: voltageOf(row), type: row.type });
+            }
+          }
+        }
+        if (spans.length > 0) break;
+      }
+      return { spans, others, complete: true };
+    };
+
+    const points = [];
+    const missing = [];
+    for (const entry of declared) {
+      const found = await resolve(entry.code);
+      if (!found || !found.point) {
+        missing.push({ code: entry.code, role: entry.role, reason: found ? "sin punto cartográfico" : "no resuelve" });
+        continue;
+      }
+      points.push({ code: entry.code, role: entry.role, lonlat: found.point, objectId: found.objectId, label: found.display, matches: found.matches });
+    }
+
+    const isZone = (entry) => entry.role === "trabajo" || entry.role === "punto de faenas" || entry.role === "objeto";
+    const zoneSpans = [];
+    const zoneDevices = [];
+    let ringsComplete = true;
+    for (const entry of points.filter(isZone)) {
+      const found = await ring(entry.lonlat, entry.code);
+      if (!found.complete) ringsComplete = false;
+      for (const span of found.spans) {
+        if (!zoneSpans.some((existing) => existing.display === span.display)) zoneSpans.push(span);
+      }
+      for (const other of found.others) {
+        if (!zoneDevices.some((existing) => existing.id === other.id)) zoneDevices.push(other);
+      }
+    }
+
+    const labels = [];
+    for (const device of zoneDevices.slice(0, settings.maxDeviceLookups)) {
+      if (!canSpend()) break;
+      try {
+        const title = safeText(await spend(() => client.objectTitle(device.id)));
+        labels.push({ objectId: device.id, code: codeOf(device.display), title, isDevice: DEVICE_TITLE.test(title) });
+      } catch (error) {
+        labels.push({ objectId: device.id, code: codeOf(device.display), title: null, isDevice: false });
+      }
+    }
+
+    const verification = await verifyAperturas({
+      client,
+      workCodes: (permit.workCodes || []).length > 0 ? permit.workCodes : derivedZoneCodes(points),
+      openCodes: permit.openCodes || [],
+      voltage,
+      settings,
+    });
+
+    const findings = [];
+    for (const entry of missing) findings.push({ level: "bloqueante", text: `${entry.code} (${entry.role}) no resuelve: ${entry.reason}` });
+    if (!ringsComplete) findings.push({ level: "advertencia", text: "el presupuesto cortó algún anillo: la red alrededor de la zona está incompleta" });
+    if (points.filter((entry) => entry.matches > 1).length > 0) {
+      for (const entry of points.filter((item) => item.matches > 1)) {
+        findings.push({ level: "info", text: `${entry.code} nombra ${entry.matches} objetos: se usó el primero con punto` });
+      }
+    }
+    const undeclared = labels.filter((label) => label.isDevice && !declared.some((entry) => entry.code === label.code));
+    for (const label of undeclared) {
+      findings.push({ level: "advertencia", text: `${label.code || label.objectId} es ${label.title} dentro de la zona y no figura como apertura` });
+    }
+    const zoneCodes = new Set(points.filter(isZone).map((entry) => entry.code));
+    const orphanSpans = zoneSpans.filter((span) => !zoneCodes.has(span.from) && !zoneCodes.has(span.to));
+    for (const span of orphanSpans) {
+      findings.push({ level: "info", text: `tramo ${span.display} no toca ningún código declarado` });
+    }
+    if (!verification.valid) findings.push({ level: "bloqueante", text: `verificación: ${verification.reason}` });
+    const voltages = [...new Set(zoneSpans.map((span) => span.voltage))];
+
+    return {
+      status: missing.length > 0 || !verification.valid || !ringsComplete ? "inconsistente" : "consistente",
+      voltage,
+      declared,
+      points,
+      missing,
+      network: { spans: zoneSpans, devices: zoneDevices },
+      outline: convexHull(points.filter(isZone).map((entry) => entry.lonlat)),
+      labels,
+      verification,
+      findings,
+      voltages,
+      budget: { requests: used.requests + verification.budget.requests, maxRequests: settings.maxRequests, elapsedMs: Date.now() - started },
+    };
+  }
+
+  const derivedZoneCodes = (points) =>
+    points.filter((entry) => entry.role === "objeto" || entry.role === "punto de faenas").map((entry) => entry.code);
+
   return {
-    version: "1.3.0",
+    version: "1.4.0",
+    auditPermit,
+    convexHull,
     findWorkZone,
     verifyAperturas,
     parseOperatingState,

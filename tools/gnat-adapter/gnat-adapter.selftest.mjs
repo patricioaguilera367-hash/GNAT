@@ -313,6 +313,62 @@ function makeChainClient(config = {}) {
   assert.equal(result.valid, false);
 }
 
+// --- audit: rebuild the permit and compare it with the network --------------
+{
+  const permit = {
+    objectCode: "PA1004",
+    workCodes: ["PA1003", "PA1004"],
+    openCodes: [{ code: "PA1002", side: "a" }],
+    groundCodes: ["PA1004"],
+    siteCodes: ["PA1005"],
+  };
+  const audit = await zone.auditPermit({
+    permit,
+    client: makeChainClient({ withSource: true }),
+    settings: { maxRequests: 800, readSources: true },
+  });
+
+  assert.equal(audit.declared.length, 4, "four distinct codes across the five roles");
+  assert.deepEqual(audit.missing, []);
+  assert.equal(audit.points.length, 4);
+  assert.ok(audit.points.every((entry) => entry.lonlat && entry.lonlat.lon < 0));
+  assert.equal(audit.outline.length, 2, "a straight radial line has no area: its hull is a segment");
+  assert.ok(audit.network.spans.length >= 3);
+  assert.deepEqual(audit.voltages, ["mt"]);
+  assert.equal(audit.verification.valid, true, audit.verification.reason);
+  assert.equal(audit.status, "consistente");
+  assert.equal(audit.findings.filter((finding) => finding.level === "bloqueante").length, 0);
+}
+
+// A code the network does not own makes the permit inconsistent.
+{
+  const audit = await zone.auditPermit({
+    permit: { workCodes: ["PA1003"], openCodes: [{ code: "PA1002", side: "a" }], groundCodes: ["ZZ9999"] },
+    client: makeChainClient({ withSource: true }),
+    settings: { maxRequests: 800, readSources: true },
+  });
+
+  assert.equal(audit.status, "inconsistente");
+  assert.equal(audit.missing.length, 1);
+  assert.equal(audit.missing[0].code, "ZZ9999");
+  assert.equal(audit.missing[0].role, "puesta a tierra");
+  assert.ok(audit.findings.some((finding) => finding.level === "bloqueante" && /ZZ9999/.test(finding.text)));
+}
+
+// The outline is a hull, not the input order.
+{
+  const square = [
+    { lon: 0, lat: 0 },
+    { lon: 2, lat: 0 },
+    { lon: 2, lat: 2 },
+    { lon: 0, lat: 2 },
+    { lon: 1, lat: 1 },
+  ];
+  const hull = zone.convexHull(square);
+  assert.equal(hull.length, 4, "the interior point is dropped");
+  assert.ok(!hull.some(([lon, lat]) => lon === 1 && lat === 1));
+}
+
 // --- shared parsers ---------------------------------------------------------
 {
   assert.equal(zone.codeOf("F517572 (Postes c.a. 11.5 m)"), "F517572");

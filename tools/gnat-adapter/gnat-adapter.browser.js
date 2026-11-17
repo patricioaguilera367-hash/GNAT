@@ -120,6 +120,8 @@
       api.findWorkZone(Object.assign({}, options || {}, { poleCodes, client: makeClient(options) }));
     api.verifyAperturasLive = (options) =>
       api.verifyAperturas(Object.assign({}, options || {}, { client: makeClient(options) }));
+    api.auditPermitLive = (permit, options) =>
+      api.auditPermit(Object.assign({}, options || {}, { permit, client: makeClient(options) }));
     return api;
   }
 

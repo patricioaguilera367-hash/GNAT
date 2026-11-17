@@ -79,6 +79,47 @@ devuelve la isla que quedó cerrada:
 poste no resuelve a un punto o si no se alcanzó ninguna apertura, devuelve
 `false` con el motivo. Una caminata a medias nunca aprueba una apertura.
 
+## Auditar un permiso hecho a mano
+
+Reconstruye el permiso desde la red y lo compara con lo que escribió el supervisor:
+puntos, envolvente, tramos, aparatos, etiquetas y la verificación de aperturas.
+
+```js
+await __gnatZone.auditPermitLive(
+  {
+    objectCode: "FAG1672",
+    workCodes: ["FAG1674", "FAG1665", "FAG1666", "FAG1671", "FAG1667"],
+    openCodes: [{ code: "FBE9179" }, { code: "FF4840" }],
+    groundCodes: ["FAG1674", "F723320"],
+    siteCodes: ["FAG1672", "FAG1665"],
+  },
+  { settings: { maxRequests: 800, maxMilliseconds: 60000, readSources: true } }
+)
+```
+
+Devuelve:
+
+```js
+{
+  status: "consistente" | "inconsistente",
+  points: [{ code, role, lonlat, objectId, label }],   // todo lo declarado, resuelto
+  missing: [{ code, role, reason }],                   // lo que la red no tiene
+  network: { spans, devices },                         // lo que hay alrededor
+  outline: [[lon, lat], ...],                          // envolvente de la zona
+  labels: [{ objectId, code, title, isDevice }],
+  verification: { valid, reason, island, boundary, poleStates, warnings },
+  findings: [{ level, text }],                         // bloqueante | advertencia | info
+  voltages: ["mt"],
+}
+```
+
+La envolvente es la cápsula convexa: en una radial recta degenera en un segmento,
+que es la verdad geométrica, no un error.
+
+`status: "inconsistente"` si algún código no resuelve, si la verificación falla o
+si el presupuesto cortó un anillo. Los aparatos que están dentro de la zona y no
+figuran como apertura salen como advertencia: ahí es donde falta una maniobra.
+
 ## Salida de `findWorkZone`
 
 ```js
