@@ -1,0 +1,19 @@
+# Local model/agent scratch
+.atl/
+.engram/
+.codegraph/
+
+# Chat transcripts and transcripts-derived context.
+# `Context/` holds real feeder names, pole codes, coordinates and screenshots of a
+# production distribution network. This repository is PUBLIC: never commit it here.
+Context/
+
+# Node
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.log
