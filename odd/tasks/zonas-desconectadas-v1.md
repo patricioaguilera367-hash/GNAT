@@ -92,6 +92,8 @@ Sin `side` informado, el lado opuesto se da por posible fuente de energía.
   por pares de postes, exploración con presupuesto, lectura de estado en el borde.
 - **T3** — Integración en `centrality_v10.js`: entrada en `Herramientas`, selección
   como semilla, dibujo de la zona en la capa propia.
+- **T4** — Modo interruptor visual: pintar aguas abajo lo que queda sin tensión al
+  marcar aperturas (ver *Ideas registradas*).
 
 ## Roadmap
 
@@ -120,6 +122,22 @@ repensarlo antes de escribir el grafo.
 **D2 decide:** el entregable es una lista de maniobras que aíslan la zona. Sin
 estado por fase, la lista es un conjunto de nombres sin valor para un permiso de
 trabajo, y S8 cambia de contrato.
+
+## Ideas registradas
+
+**T4 — Modo interruptor (visual, no calculado).**
+Con la herramienta activada, seleccionar una apertura en el mapa GNAT y pintar en
+rojo **todas las líneas aguas abajo que quedan sin tensión**. Si el recorrido
+detecta alimentación por otra rama (anillada), no pinta nada. Se van marcando
+varias aperturas acumulativamente —como switches de un circuito— hasta ver la zona
+quedar desconectada.
+
+Variante: seleccionar un poste o una línea cualquiera y "simular zona
+desconectada", que hace lo mismo de forma automática con los puntos más cercanos.
+
+Encaja con S1 porque no calcula nada: el `island` que ya devuelve `verifyAperturas`
+es literalmente lo que se pinta en rojo, y las aperturas con `live: "si"` o
+`sources` no vacío son exactamente el caso en que no se pinta nada.
 
 ## Log
 
@@ -158,3 +176,14 @@ caminar el grafo con esa resolución engancharía coordenadas al poste equivocad
 silencio. `probePole(code)` (v1.9.0) exige coincidencia del código inicial del
 `display`, acepta la ambigüedad de varios objetos por código y usa el primero que
 traiga un `Point` cartográfico.
+
+**L7** — «selecciono una apertura en gnat, del propio gnat, con la herramienta
+activada, y me marca en rojo aguas abajo todo lo que está desenergizado, todas las
+lineas. si detecta energia por otra rama, no marca en rojo nada». Idea del dueño
+registrada como T4.
+
+**L8** — Corrección del dueño sobre la física del aparato: corta un lado, no el
+poste. En radial `fuente — a | poste | b — … — remate`, abrir `b` deja el poste
+como remate energizado, y abrir `a` lo deja sin tensión. El motor deduce el lado
+caminando hacia la fuente (`walkToSource`), y un poste que sigue con tensión no
+invalida la zona: se informa en `warnings`.
