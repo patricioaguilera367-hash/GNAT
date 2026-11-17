@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.6.0";
+  const VERSION = "1.6.1";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -1353,6 +1353,21 @@
     console.info(`[gnatProbe] ${pointCase.code}`);
     // Printed as text so the console does not collapse it into `{…}`.
     console.info(JSON.stringify(pointCase.summary.spanDiagnosis, null, 1));
+    console.info(
+      JSON.stringify(
+        {
+          spans: pointCase.summary.spansFound,
+          spansByVoltage: pointCase.summary.spansByVoltage,
+          spanTypes: pointCase.summary.spanTypes,
+          spanDisplays: pointCase.summary.spanDisplays
+            .map((entry) => (entry.parsesCleanly ? Object.values(entry.variants)[0] : entry.display)),
+          lineStrings: pointCase.summary.lineStringsReturned,
+          twoVertexLineStrings: pointCase.summary.twoVertexLineStrings,
+        },
+        null,
+        1
+      )
+    );
     return pointCase;
   }
 
