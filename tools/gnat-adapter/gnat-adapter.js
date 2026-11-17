@@ -320,6 +320,14 @@
     };
   }
 
+  /** Normalise an opening: a bare code, or `{ code, side }` with side a|b|both. */
+  const normaliseOpening = (entry) => {
+    if (typeof entry === "string") return { code: entry.trim().toUpperCase(), side: "desconocido" };
+    const raw = safeText(entry && entry.code).trim().toUpperCase();
+    const side = safeText(entry && entry.side).toLowerCase();
+    return { code: raw, side: side === "a" || side === "b" || side === "both" ? side : "desconocido" };
+  };
+
   /**
    * Verify a set of openings instead of proposing them.
    *
@@ -336,7 +344,9 @@
     const voltage = safeText(opts.voltage || "mt").toLowerCase();
 
     const work = (opts.workCodes || []).map((code) => safeText(code).trim().toUpperCase()).filter(Boolean);
-    const opened = (opts.openCodes || []).map((code) => safeText(code).trim().toUpperCase()).filter(Boolean);
+    const openings = (opts.openCodes || []).map(normaliseOpening).filter((entry) => entry.code);
+    const opened = openings.map((entry) => entry.code);
+    const sideOf = new Map(openings.map((entry) => [entry.code, entry.side]));
 
     const started = Date.now();
     const used = { requests: 0 };
@@ -459,7 +469,42 @@
 
     let valid = false;
     let reason;
-    if (island.size === 0) {
+
+    // A switching device cuts one side of its pole, not the pole itself. Opening
+    // one side leaves the pole fed from the other: it becomes a live dead-end.
+    // Only both sides isolate the pole, and work must never be reported as dead
+    // on a pole whose live side was not established.
+    const roles = new Map();
+    for (const code of work) roles.set(code, "trabajo");
+    for (const code of opened) roles.set(code, roles.get(code) === "trabajo" ? "ambos" : "apertura");
+
+    const islandClosed = sources.length === 0 && !incomplete && boundary.length > 0;
+    const poleStates = [...roles.entries()].map(([code, role]) => {
+      if (role === "apertura" || role === "ambos") {
+        const side = sideOf.get(code) || "desconocido";
+        if (side === "both") {
+          return { code, role, live: "no", reason: "ambos lados abiertos: el poste queda aislado" };
+        }
+        return {
+          code,
+          role,
+          live: "desconocido",
+          reason:
+            side === "desconocido"
+              ? "el aparato corta un solo lado y no se indicó cuál: el lado opuesto puede seguir energizado"
+              : `se abre el lado ${side}: el lado opuesto puede seguir energizado`,
+        };
+      }
+      return {
+        code,
+        role,
+        live: islandClosed ? "no" : "desconocido",
+        reason: islandClosed ? "dentro de la isla cerrada" : "la isla no cerró: no puede afirmarse que esté sin tensión",
+      };
+    });
+    const liveWorkPoles = poleStates.filter((entry) => entry.role !== "apertura" && entry.live !== "no");
+
+    if (work.some((code) => !cut.has(code)) && seenPoints.size === 0) {
       reason = "ningún poste de trabajo resolvió a un punto";
     } else if (sources.length > 0) {
       reason = `la zona sigue conectada a ${sources[0].title || "una fuente"} en ${sources[0].code}`;
@@ -469,6 +514,10 @@
       reason = `${failed.length} poste(s) sin punto cartográfico: la apertura no puede confirmarse`;
     } else if (boundary.length === 0) {
       reason = "no se alcanzó ninguna de las aperturas indicadas: la zona no está delimitada por ellas";
+    } else if (liveWorkPoles.length > 0) {
+      reason = `poste(s) de trabajo sin tensión confirmada: ${liveWorkPoles
+        .map((entry) => `${entry.code} (${entry.live === "desconocido" ? "estado desconocido" : "energizado"})`)
+        .join(", ")}`;
     } else {
       valid = true;
       reason = `zona aislada: ${boundary.length} apertura(s) cierran la isla`;
@@ -479,6 +528,8 @@
       reason,
       work,
       opened,
+      openings,
+      poleStates,
       voltage,
       island: [...island],
       boundary,
@@ -490,7 +541,7 @@
   }
 
   return {
-    version: "1.1.0",
+    version: "1.2.0",
     findWorkZone,
     verifyAperturas,
     parseOperatingState,

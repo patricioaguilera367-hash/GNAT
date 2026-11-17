@@ -75,6 +75,14 @@ Presupuesto agotado, poste sin punto cartográfico, apertura nunca alcanzada o
 título ilegible ⇒ `valid: false` con el motivo. Una caminata incompleta jamás
 aprueba una apertura, y un poste abierto es frontera, nunca miembro de la isla.
 
+**S14 — El aparato corta un lado, no el poste.**
+Abrir el lado A deja el poste alimentado por B: queda un remate **con tensión**.
+Sólo abrir los dos lados aísla el poste. Por eso `openCodes` acepta
+`{ code, side: "a"|"b"|"both" }` y el resultado trae `poleStates` con el estado
+de cada poste (`live: "si"|"no"|"desconocido"`). Un poste que es a la vez zona
+de trabajo y apertura nunca se declara sin tensión, y con eso `valid` es `false`.
+Sin `side` informado, el lado opuesto se da por posible fuente de energía.
+
 ## Tasks
 
 - **T1** — `probeAround(lonlat, radius, samples)` en el probe: valida que el

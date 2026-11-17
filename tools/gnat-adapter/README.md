@@ -37,10 +37,28 @@ criterio propio. El motor verifica si la decisión aísla la zona.
 ```js
 await __gnatZone.verifyAperturasLive({
   workCodes: ["FAG1674", "FAG1665", "FAG1666", "FAG1671", "FAG1667"],
-  openCodes: ["FBE9179", "FF4840"],
+  // `side` es el lado del poste que corta el aparato: "a", "b" o "both".
+  openCodes: [{ code: "FBE9179", side: "both" }, { code: "FF4840", side: "both" }],
   settings: { maxRequests: 400, maxMilliseconds: 30000, readSources: true },
 })
 ```
+
+Un aparato **no hace desaparecer el poste**: corta un lado. Abrir un lado deja el
+poste alimentado por el otro —queda un remate con tensión— y sólo abrir los dos
+lados lo aísla. Por eso `openCodes` acepta el lado, y `poleStates` informa cada
+poste por separado:
+
+```js
+poleStates: [
+  { code: "FAG1674", role: "ambos",  live: "desconocido", reason: "el aparato corta un solo lado..." },
+  { code: "FBE9179", role: "apertura", live: "desconocido", reason: "se abre el lado a: el lado opuesto puede seguir energizado" },
+  { code: "FAG1665", role: "trabajo", live: "no", reason: "dentro de la isla cerrada" },
+]
+```
+
+`live` sólo vale `"no"` con evidencia: isla cerrada, o `side: "both"` en el
+aparato. Un poste que es trabajo y apertura a la vez nunca se declara sin
+tensión, y eso alcanza para que `valid` sea `false`.
 
 Camina el grafo MT desde los postes de trabajo, se detiene en cada apertura y
 devuelve la isla que quedó cerrada:
@@ -51,6 +69,7 @@ devuelve la isla que quedó cerrada:
   reason: "zona aislada: 2 apertura(s) cierran la isla",
   island: ["FAG1674", "FAG1665", ...],   // lo que queda sin tensión
   boundary: ["FBE9179", "FF4840"],        // las aperturas que la cierran
+  poleStates: [{ code, role, live, reason }],
   sources: [{ code, objectId, title }],   // si sigue alimentada, acá está
   unresolved: [code],                     // lo que el presupuesto no alcanzó
 }

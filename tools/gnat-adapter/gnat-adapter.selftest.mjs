@@ -242,6 +242,46 @@ function makeChainClient(config = {}) {
   assert.ok(result.unresolved.length > 0);
 }
 
+// --- a switch cuts a side, not the pole -------------------------------------
+// Opening both sides isolates the pole; opening one leaves it fed from the other.
+{
+  const both = await zone.verifyAperturas({
+    workCodes: ["PA1002"],
+    openCodes: [{ code: "PA1001", side: "both" }, { code: "PA1003", side: "both" }],
+    client: makeChainClient(),
+  });
+  assert.equal(both.valid, true, both.reason);
+  assert.deepEqual(both.opened, ["PA1001", "PA1003"]);
+  assert.equal(both.poleStates.find((entry) => entry.code === "PA1001").live, "no");
+  assert.match(both.poleStates.find((entry) => entry.code === "PA1001").reason, /aislado/);
+}
+
+{
+  const oneSide = await zone.verifyAperturas({
+    workCodes: ["PA1002"],
+    openCodes: [{ code: "PA1001", side: "a" }, { code: "PA1003", side: "b" }],
+    client: makeChainClient(),
+  });
+  const state = oneSide.poleStates.find((entry) => entry.code === "PA1001");
+  assert.equal(state.live, "desconocido", "one side still feeds the pole");
+  assert.match(state.reason, /lado a/);
+  assert.equal(state.role, "apertura");
+}
+
+// A pole that is both work and an opening cannot be declared dead.
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1002"],
+    openCodes: ["PA1002"],
+    client: makeChainClient(),
+  });
+  const state = result.poleStates.find((entry) => entry.code === "PA1002");
+  assert.equal(state.role, "ambos");
+  assert.equal(state.live, "desconocido");
+  assert.equal(result.valid, false);
+  assert.match(result.reason, /PA1002 \(estado desconocido\)/);
+}
+
 // --- shared parsers ---------------------------------------------------------
 {
   assert.equal(zone.codeOf("F517572 (Postes c.a. 11.5 m)"), "F517572");
