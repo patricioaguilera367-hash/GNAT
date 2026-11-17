@@ -35,6 +35,8 @@
   /** Only a pair of pole codes is an edge; `Trintre - Colonia Miraflores` is not. */
   const CODE_PAIR = /^([A-Z]{0,3}\d{4,})\s+-\s+([A-Z]{0,3}\d{4,})$/i;
   const DEVICE_TITLE = /\b(desconectador|seccional|reconectador|cuchilla|interruptor|fusible)\b/i;
+  /** A pole title that can still feed a zone: energy comes from somewhere. */
+  const SOURCE_TITLE = /\b(subestaci[oó]n|reconectador|alimentador|salida de l[ií]nea|generador)\b/i;
   const CABLES_ONLY = /^(alambre|cable|conductor)\b/i;
 
   const safeText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : String(value));
@@ -318,9 +320,179 @@
     };
   }
 
+  /**
+   * Verify a set of openings instead of proposing them.
+   *
+   * The operator decides which switches to open; this only answers whether that
+   * decision isolates the work zone. It walks the MT graph from the work poles,
+   * stops at every opening, and reports the island it closed. An island that
+   * reaches a source is not de-energised, and neither is one the budget could not
+   * finish exploring: `valid` is never true on incomplete evidence.
+   */
+  async function verifyAperturas(options) {
+    const opts = options || {};
+    const client = opts.client || {};
+    const settings = Object.assign({}, DEFAULTS, opts.settings || {});
+    const voltage = safeText(opts.voltage || "mt").toLowerCase();
+
+    const work = (opts.workCodes || []).map((code) => safeText(code).trim().toUpperCase()).filter(Boolean);
+    const opened = (opts.openCodes || []).map((code) => safeText(code).trim().toUpperCase()).filter(Boolean);
+
+    const started = Date.now();
+    const used = { requests: 0 };
+    const canSpend = () => used.requests < settings.maxRequests && Date.now() - started < settings.maxMilliseconds;
+    const spend = async (fn) => {
+      used.requests += 1;
+      return fn();
+    };
+
+    const cut = new Set(opened);
+    const island = new Set(work);
+    const boundary = [];
+    const sources = [];
+    const sourceIds = new Set();
+    const failed = [];
+    const queue = [...work];
+    const seenPoints = new Set();
+    let partial = false;
+
+    const resolvePoint = async (code) => {
+      if (!canSpend()) return null;
+      let rows = [];
+      try {
+        rows = (await spend(() => client.search(code))) || [];
+      } catch (error) {
+        rows = [];
+      }
+      const exact = (Array.isArray(rows) ? rows : []).filter((row) => codeOf(row && row.display) === code);
+      for (const row of exact) {
+        const ids = [Number(row.surrogate_in_map_id), Number(row.object_id)].filter(
+          (id, index, all) => Number.isFinite(id) && all.indexOf(id) === index
+        );
+        for (const id of ids) {
+          if (!canSpend()) return null;
+          try {
+            const payload = await spend(() => client.geojson([id]));
+            const point = featureList(payload).map(pointOfFeature).find(Boolean);
+            if (point) return point;
+          } catch (error) {
+            // try the next id
+          }
+        }
+      }
+      return null;
+    };
+
+    while (queue.length > 0) {
+      const code = queue.shift();
+      if (cut.has(code)) {
+        // An opened pole is the island's boundary, never one of its members.
+        if (boundary.indexOf(code) === -1) boundary.push(code);
+        island.delete(code);
+        continue;
+      }
+      if (!canSpend()) {
+        // Dropping the pole silently would let an unfinished walk look complete.
+        queue.unshift(code);
+        break;
+      }
+      const point = await resolvePoint(code);
+      if (!point) {
+        failed.push(code);
+        continue;
+      }
+      seenPoints.add(code);
+
+      let found = false;
+      let sampledAll = true;
+      for (const radius of settings.radiiMeters) {
+        for (let index = 0; index < settings.bearings; index += 1) {
+          if (!canSpend()) {
+            sampledAll = false;
+            break;
+          }
+          const bearing = (2 * Math.PI * index) / settings.bearings;
+          const sample = offsetOf(point.lon, point.lat, radius, bearing);
+          let rows = [];
+          try {
+            rows = (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
+          } catch (error) {
+            continue;
+          }
+          for (const row of Array.isArray(rows) ? rows : []) {
+            const pair = codePairOf(row && row.display);
+            if (pair && voltageOf(row) === voltage) {
+              found = true;
+              const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
+              if (other && !island.has(other) && boundary.indexOf(other) === -1) {
+                if (cut.has(other)) {
+                  boundary.push(other);
+                } else {
+                  island.add(other);
+                  queue.push(other);
+                }
+              }
+            } else if (!pair && row && row.id !== undefined && settings.readSources && !sourceIds.has(row.id)) {
+              if (!canSpend()) continue;
+              try {
+                const title = safeText(await spend(() => client.objectTitle(row.id)));
+                if (SOURCE_TITLE.test(title)) {
+                  sourceIds.add(row.id);
+                  sources.push({ code, objectId: Number(row.id), title });
+                }
+              } catch (error) {
+                // an unreadable title is not a source, and not evidence of one
+              }
+            }
+          }
+        }
+        if (!sampledAll) {
+          partial = true;
+          break;
+        }
+        if (found) break;
+      }
+    }
+
+    const truncated = partial || (canSpend() === false && queue.length > 0);
+    const incomplete = truncated || failed.length > 0 || island.size === 0;
+
+    let valid = false;
+    let reason;
+    if (island.size === 0) {
+      reason = "ningún poste de trabajo resolvió a un punto";
+    } else if (sources.length > 0) {
+      reason = `la zona sigue conectada a ${sources[0].title || "una fuente"} en ${sources[0].code}`;
+    } else if (truncated) {
+      reason = `presupuesto agotado con ${queue.length} poste(s) sin explorar: la apertura no puede confirmarse`;
+    } else if (failed.length > 0) {
+      reason = `${failed.length} poste(s) sin punto cartográfico: la apertura no puede confirmarse`;
+    } else if (boundary.length === 0) {
+      reason = "no se alcanzó ninguna de las aperturas indicadas: la zona no está delimitada por ellas";
+    } else {
+      valid = true;
+      reason = `zona aislada: ${boundary.length} apertura(s) cierran la isla`;
+    }
+
+    return {
+      valid: valid && !incomplete,
+      reason,
+      work,
+      opened,
+      voltage,
+      island: [...island],
+      boundary,
+      sources,
+      failed,
+      unresolved: queue,
+      budget: { requests: used.requests, maxRequests: settings.maxRequests, elapsedMs: Date.now() - started },
+    };
+  }
+
   return {
-    version: "1.0.0",
+    version: "1.1.0",
     findWorkZone,
+    verifyAperturas,
     parseOperatingState,
     codeOf,
     codePairOf,

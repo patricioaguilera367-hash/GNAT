@@ -118,6 +118,8 @@
     api.makeClient = makeClient;
     api.findWorkZoneLive = (poleCodes, options) =>
       api.findWorkZone(Object.assign({}, options || {}, { poleCodes, client: makeClient(options) }));
+    api.verifyAperturasLive = (options) =>
+      api.verifyAperturas(Object.assign({}, options || {}, { client: makeClient(options) }));
     return api;
   }
 

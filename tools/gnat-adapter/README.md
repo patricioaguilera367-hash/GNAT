@@ -29,7 +29,38 @@ propio.
 | `objectTitle(objectId)` | título de la ficha (`Detalle de Cable …`, `Desconectador …`) |
 | `sectionHtml(objectId, sectionId)` | HTML crudo de la sección (23 para estado) |
 
-## Salida
+## Verificar una apertura elegida por el supervisor
+
+El motor **no propone** la apertura óptima: eso lo decide el supervisor con
+criterio propio. El motor verifica si la decisión aísla la zona.
+
+```js
+await __gnatZone.verifyAperturasLive({
+  workCodes: ["FAG1674", "FAG1665", "FAG1666", "FAG1671", "FAG1667"],
+  openCodes: ["FBE9179", "FF4840"],
+  settings: { maxRequests: 400, maxMilliseconds: 30000, readSources: true },
+})
+```
+
+Camina el grafo MT desde los postes de trabajo, se detiene en cada apertura y
+devuelve la isla que quedó cerrada:
+
+```js
+{
+  valid: true | false,
+  reason: "zona aislada: 2 apertura(s) cierran la isla",
+  island: ["FAG1674", "FAG1665", ...],   // lo que queda sin tensión
+  boundary: ["FBE9179", "FF4840"],        // las aperturas que la cierran
+  sources: [{ code, objectId, title }],   // si sigue alimentada, acá está
+  unresolved: [code],                     // lo que el presupuesto no alcanzó
+}
+```
+
+**`valid: true` sólo con evidencia completa.** Si el presupuesto se agota, si un
+poste no resuelve a un punto o si no se alcanzó ninguna apertura, devuelve
+`false` con el motivo. Una caminata a medias nunca aprueba una apertura.
+
+## Salida de `findWorkZone`
 
 ```js
 {

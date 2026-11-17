@@ -151,6 +151,97 @@ function makeClient(config = {}) {
   assert.equal(result.reason, "ningún código resolvió a un punto");
 }
 
+// --- verify: the operator chooses the openings, the engine checks them ------
+const CHAIN = ["PA1001", "PA1002", "PA1003", "PA1004", "PA1005"];
+const chainPoint = (index) => ({ lon: -72.1 + index * 0.01, lat: -38.7 });
+const SOURCE_OBJECT_ID = 5001;
+
+function makeChainClient(config = {}) {
+  return {
+    async search(term) {
+      if (!CHAIN.includes(term)) return [];
+      return [{ object_id: 9000 + CHAIN.indexOf(term), surrogate_in_map_id: 9000 + CHAIN.indexOf(term), display: `${term} (Postes c.a. 11.5 m)` }];
+    },
+    async geojson(ids) {
+      const index = Number(ids[0]) - 9000;
+      const point = chainPoint(index);
+      return { type: "Feature", geometry: { type: "Point", coordinates: [point.lon, point.lat] }, id: ids[0] };
+    },
+    async pointObjects(lon, lat) {
+      let best = 0;
+      for (let i = 1; i < CHAIN.length; i += 1) {
+        if (Math.abs(lon - chainPoint(i).lon) < Math.abs(lon - chainPoint(best).lon)) best = i;
+      }
+      const rows = [];
+      if (best > 0) rows.push({ id: 7000 + best, display: `${CHAIN[best - 1]} - ${CHAIN[best]}`, type: "Alambre Cu Duro Des 6 AWG 2-fas MT" });
+      if (best < CHAIN.length - 1) rows.push({ id: 7100 + best, display: `${CHAIN[best]} - ${CHAIN[best + 1]}`, type: "Alambre Cu Duro Des 6 AWG 2-fas MT" });
+      if (best === 0 && config.withSource) rows.push({ id: SOURCE_OBJECT_ID, display: CHAIN[0], type: "" });
+      return rows;
+    },
+    async objectTitle(id) {
+      return id === SOURCE_OBJECT_ID ? "Subestación MT/BT 15 kVA" : `Detalle de Cable ${id}`;
+    },
+    async sectionHtml() {
+      return SECTION_CLOSED;
+    },
+  };
+}
+
+// The chosen openings close the island: nothing else feeds it.
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1002", "PA1003"],
+    openCodes: ["PA1001", "PA1004"],
+    client: makeChainClient(),
+  });
+  assert.equal(result.valid, true, result.reason);
+  assert.deepEqual(result.island.sort(), ["PA1002", "PA1003"]);
+  assert.deepEqual(result.boundary.sort(), ["PA1001", "PA1004"]);
+  assert.equal(result.sources.length, 0);
+  assert.equal(result.voltage, "mt");
+}
+
+// One opening missing: the island still reaches a source, so it is not dead.
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1002", "PA1003"],
+    openCodes: ["PA1004"],
+    client: makeChainClient({ withSource: true }),
+    settings: { maxRequests: 200, readSources: true },
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.reason, /sigue conectada a Subestación/);
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].code, "PA1001");
+}
+
+// Opening nothing: the island never meets the switches it claims to rely on.
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1002"],
+    openCodes: [],
+    client: makeChainClient(),
+    settings: { maxRequests: 200 },
+  });
+  assert.equal(result.valid, false);
+  assert.equal(result.boundary.length, 0);
+  assert.match(result.reason, /no se alcanzó ninguna de las aperturas/);
+  assert.equal(result.island.length, 5, "the walk covered the whole chain");
+}
+
+// S1: an unfinished walk is never a valid opening.
+{
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1002", "PA1003"],
+    openCodes: ["PA1001", "PA1004"],
+    client: makeChainClient(),
+    settings: { maxRequests: 8 },
+  });
+  assert.equal(result.valid, false, "incomplete evidence never approves an opening");
+  assert.match(result.reason, /presupuesto agotado/);
+  assert.ok(result.unresolved.length > 0);
+}
+
 // --- shared parsers ---------------------------------------------------------
 {
   assert.equal(zone.codeOf("F517572 (Postes c.a. 11.5 m)"), "F517572");

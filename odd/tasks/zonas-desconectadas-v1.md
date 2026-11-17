@@ -64,6 +64,17 @@ Adaptador probado offline contra las respuestas reales ya registradas (cable MT,
 cable BT, sección 23 de un desconectador, poste sin cables). La integración en la
 UI se valida con un smoke del dueño sobre el mapa.
 
+**S12 — El motor verifica aperturas, no las elige.**
+El supervisor decide qué abrir; el motor responde si esa decisión aísla la zona.
+Camina el grafo MT desde los postes de trabajo, se detiene en cada apertura, y
+devuelve la isla cerrada, las aperturas que la delimitan y las fuentes que aún la
+alimentan. La apertura óptima no es un objetivo del motor.
+
+**S13 — `valid: true` sólo con evidencia completa.**
+Presupuesto agotado, poste sin punto cartográfico, apertura nunca alcanzada o
+título ilegible ⇒ `valid: false` con el motivo. Una caminata incompleta jamás
+aprueba una apertura, y un poste abierto es frontera, nunca miembro de la isla.
+
 ## Tasks
 
 - **T1** — `probeAround(lonlat, radius, samples)` en el probe: valida que el
