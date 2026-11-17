@@ -87,3 +87,15 @@ timestamp / `Normal`) se lee de la sección 23 como texto.
 
 **L3** — No existe primitivo que dado un poste devuelva sus cables: la sección 23
 del poste viene vacía y el point query devuelve el poste y sus tirantes. De ahí S3.
+
+**L4** — Primera medición del anillo. Encontró conductores reales, y con ellos dos
+defectos propios: `Trintre - Colonia Miraflores` (par de localidades) entraba como
+arista, y 20 m de radio no toca una línea fina (`F517570` devolvió 0 cables).
+Corregido en v1.8.0: sólo un par de códigos de poste es arista, y el anillo arranca
+a 5 m abriéndose a 12 m sólo si no halló nada. Pendiente de medición en vivo.
+
+**L5** — El anillo descubre aristas pero no permite **caminar**: el `display` da
+códigos de poste (`F562541`), no coordenadas, y para repetir el anillo en el poste
+vecino hacen falta sus lon/lat. Falta el eslabón `código de poste → coordenadas`
+(vía `textual_search` + `get_objects_geojson`). Sin él no hay exploración más allá
+de los postes semilla.
