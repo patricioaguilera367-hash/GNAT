@@ -96,6 +96,18 @@ a 5 m abriéndose a 12 m sólo si no halló nada. Pendiente de medición en vivo
 
 **L5** — El anillo descubre aristas pero no permite **caminar**: el `display` da
 códigos de poste (`F562541`), no coordenadas, y para repetir el anillo en el poste
-vecino hacen falta sus lon/lat. Falta el eslabón `código de poste → coordenadas`
-(vía `textual_search` + `get_objects_geojson`). Sin él no hay exploración más allá
-de los postes semilla.
+vecino hacen falta sus lon/lat.
+
+**L5-corrección** — Ese eslabón **ya existía**: `resolveCode` (`probe-mt-aperturas.js:734`)
+y `resolveGeometry` (`:656`) ya convierten código → lon/lat, y `probeCode` (`:1137`)
+ya los usa. L5 afirmó una ausencia sin verificarla. Lo que sí faltaba es el uso
+seguro de esa resolución para caminar.
+
+**L6** — La resolución por código es **prefijo** (`F51757` trae la subestación y
+`F517570..F517577`) y el mismo código se repite entre tipos de objeto: `F517572`
+es el poste y también su desconectador fusible. `resolveCode` retorna con el primer
+término que trae filas y el match exacto es sólo preferencia de orden, así que
+caminar el grafo con esa resolución engancharía coordenadas al poste equivocado en
+silencio. `probePole(code)` (v1.9.0) exige coincidencia del código inicial del
+`display`, acepta la ambigüedad de varios objetos por código y usa el primero que
+traiga un `Point` cartográfico.

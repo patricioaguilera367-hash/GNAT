@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.8.0";
+  const VERSION = "1.9.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -1566,6 +1566,83 @@
     return caseEntry;
   }
 
+  /** Display is `F517572 (Postes c.a. 11.5 m ...)`: the code is its leading token. */
+  const CODE_TOKEN = /^\s*([A-Z]{0,3}\d{4,})\b/i;
+  const codeOfDisplay = (display) => {
+    const match = CODE_TOKEN.exec(safeString(display));
+    return match ? match[1].toUpperCase() : null;
+  };
+
+  /**
+   * Resolve one pole code to its coordinates and ring it.
+   *
+   * `textual_search` is prefix-based, so a code returns its whole family
+   * (`F51757` gives the substation and `F517570..F517577`), and the same code
+   * repeats across object types — a pole and its disconnect switch share
+   * `F517572`. Only an exact leading-code match is eligible, and the first one
+   * that actually carries a cartographic point wins.
+   */
+  async function probePole(code) {
+    const api = buildApi(resolveEnv());
+    const wanted = safeString(code).trim().toUpperCase();
+    const matches = [];
+
+    if (wanted) {
+      const resolution = await resolveCode(api, wanted);
+      for (const row of resolution.candidates || []) {
+        if (codeOfDisplay(row && row.display) !== wanted) continue;
+        matches.push(row);
+      }
+    }
+
+    let chosen = null;
+    for (const row of matches) {
+      // `resolveGeometry` returns its result unwrapped, not an `{ok, value}` step.
+      const geometry = await resolveGeometry(api, row);
+      if (geometry && geometry.lonlat) {
+        chosen = { row, geometry };
+        break;
+      }
+    }
+
+    const caseEntry = {
+      code: `pole@${wanted}`,
+      requestedCode: wanted,
+      exactMatches: matches.length,
+      matches: matches.map((row) => ({
+        objectId: toNumericId(row.object_id),
+        surrogateInMapId: toNumericId(row.surrogate_in_map_id),
+        display: row.display,
+      })),
+      resolved: chosen ? chosen.geometry : null,
+      ring: null,
+    };
+
+    if (chosen) {
+      caseEntry.ring = await probeAround(chosen.geometry.lonlat);
+    } else {
+      console.warn(`[gnatProbe] ${caseEntry.code}: no cartographic point for that exact code`);
+    }
+
+    caseEntry.summary = {
+      code: caseEntry.code,
+      mode: "pole",
+      requestedCode: wanted,
+      exactMatches: matches.length,
+      pointFound: Boolean(chosen),
+      lonlat: chosen ? chosen.geometry.lonlat : null,
+      spansFound: caseEntry.ring ? caseEntry.ring.summary.spansFound : 0,
+      spansByVoltage: caseEntry.ring ? caseEntry.ring.summary.spansByVoltage : { mt: 0, bt: 0, unknown: 0 },
+      edges: caseEntry.ring ? caseEntry.ring.edges : [],
+    };
+
+    report.cases.push(caseEntry);
+    report.finishedAt = new Date().toISOString();
+    console.info(`[gnatProbe] ${caseEntry.code}`);
+    console.info(JSON.stringify(caseEntry.summary, null, 1));
+    return caseEntry;
+  }
+
   // ---------------------------------------------------------------- entrypoint
 
   async function run(input) {
@@ -1703,6 +1780,7 @@
     probeAt,
     probeCenter,
     probeAround,
+    probePole,
     json,
     summaryJson,
     copy,

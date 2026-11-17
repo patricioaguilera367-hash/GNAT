@@ -512,6 +512,27 @@ assert.equal(cableTitles[1].spanVoltage, "mt");
 assert.equal(cableTitles[2].spanVoltage, "bt");
 stubState.pointObjects = null;
 
+// --- S3: a pole code resolves to a point and can be ringed ------------------
+// `F517572` names both the pole and its disconnect switch, so the code alone is
+// ambiguous and only the candidate carrying a cartographic point may be used.
+stubState.pointObjects = CABLE_OBJECTS;
+const codeCase = await probe.probePole("f517572");
+
+assert.equal(codeCase.exactMatches, 2, "a code repeats across a pole and its device");
+assert.ok(codeCase.resolved, "one of the candidates must carry a point");
+assert.equal(codeCase.resolved.geometryType, "Point");
+assert.ok(Math.abs(codeCase.resolved.lonlat.lon - (POLE_LONLAT[0] + 0.0001)) < 1e-9);
+assert.equal(codeCase.summary.pointFound, true);
+assert.equal(codeCase.summary.spansFound, 2, "the ring runs from the resolved point");
+assert.deepEqual(plain(codeCase.summary.spansByVoltage), { mt: 1, bt: 1, unknown: 0 });
+
+// A code nobody owns must not be guessed from the family it shares a prefix with.
+const orphan = await probe.probePole("F999999");
+assert.equal(orphan.exactMatches, 0, "a prefix match is not an exact pole match");
+assert.equal(orphan.ring, null, "without a point there is nothing to ring");
+assert.equal(orphan.summary.pointFound, false);
+stubState.pointObjects = null;
+
 // --- S3: the ring around a pole finds its conductors -----------------------
 // The extra object's display is a pair of sector names, not pole codes.
 const RING_OBJECTS = [
