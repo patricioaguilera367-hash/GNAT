@@ -35,7 +35,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.5.0";
 
   /** Poles to probe when `run()` is called without arguments. */
   const DEFAULT_CODES = ["F51757"];
@@ -1010,6 +1010,7 @@
       objectsReturned: objects.length,
       typeCounts,
       objectsSample,
+      objectTitles: poleCase.objectTitles || [],
       note: spans.length > 0 ? "spans classified" : "no object at this point was classified as a span",
     };
 
@@ -1196,6 +1197,18 @@
     anyPointFound: summaries.some((summary) => summary.pointFound),
   });
 
+  /** Read only the class GNAT reports for an object, without its widgets. */
+  async function probeObjectTitle(api, objectId) {
+    const numericId = toNumericId(objectId);
+    if (numericId === null) return { objectId, title: null, buckets: [] };
+    const definition = await api.objectDefinition(numericId);
+    return {
+      objectId: numericId,
+      title: definition && definition.title ? truncate(htmlToText(definition.title), 200) : null,
+      buckets: definition && definition.widget_definition ? Object.keys(definition.widget_definition) : [],
+    };
+  }
+
   /**
    * Inventory a bare coordinate: no code, no textual search. A span is a line
    * between two poles, so the middle of a span can answer what the pole cannot.
@@ -1216,6 +1229,24 @@
     pointCase.pointQuery = point.ok ? point.value : { error: point.error, objects: [] };
 
     const objects = (pointCase.pointQuery && pointCase.pointQuery.objects) || [];
+
+    // Ask GNAT for the class of each object instead of trusting the label-based
+    // classification: this is what tells a span apart from an accessory.
+    const objectTitles = [];
+    for (const item of objects.slice(0, 3)) {
+      const title = await step(`title:${item.id}`, () => probeObjectTitle(api, item.id));
+      if (title.ok) {
+        objectTitles.push({
+          ...title.value,
+          reportedType: item.type,
+          reportedDisplay: item.display,
+          classifiedAsSpan: item.isSpan,
+          classifiedAsDevice: item.isDevice,
+        });
+      }
+    }
+    pointCase.objectTitles = objectTitles;
+
     const spanIds = objects
       .filter((item) => item.isSpan)
       .map((item) => toNumericId(item.id))
@@ -1270,7 +1301,9 @@
     report.cases.push(pointCase);
     report.finishedAt = new Date().toISOString();
     report.verdict = verdictOf(report.cases.map((entry) => entry.summary).filter(Boolean));
-    console.info(`[gnatProbe] ${pointCase.code}`, pointCase.summary.spanDiagnosis);
+    console.info(`[gnatProbe] ${pointCase.code}`);
+    // Printed as text so the console does not collapse it into `{…}`.
+    console.info(JSON.stringify(pointCase.summary.spanDiagnosis, null, 1));
     return pointCase;
   }
 

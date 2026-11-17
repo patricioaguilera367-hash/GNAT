@@ -460,6 +460,12 @@ assert.equal(atCase.summary.pointFound, true);
 assert.equal(atCase.summary.spansFound, 2, "the sample point must expose its spans");
 assert.equal(atCase.summary.lineStringsReturned, 2);
 assert.equal(atCase.summary.spanDiagnosis.note, "spans classified");
+assert.equal(atCase.summary.spanDiagnosis.objectTitles.length, 3, "GNAT's own class must be read for each object");
+for (const entry of atCase.summary.spanDiagnosis.objectTitles) {
+  assert.equal(typeof entry.title, "string");
+  assert.ok(entry.title.startsWith("Objeto "), `unexpected title ${entry.title}`);
+  assert.equal(typeof entry.classifiedAsSpan, "boolean");
+}
 assert.ok(
   probe.report.cases.some((entry) => entry.code === "mid-span"),
   "a coordinate probe must land in the report"
