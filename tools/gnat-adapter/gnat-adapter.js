@@ -22,14 +22,19 @@
 
   const DEFAULTS = {
     sectionId: 23,
-    radiiMeters: [5, 12],
+    // GNAT's point query takes its capture radius from `units_per_pixel` and the
+    // visible layers from `scale`, both per request. One calibrated query replaces
+    // a ring of six; the second entry is only tried when the first finds nothing.
+    pointTuning: [
+      { scale: 250, units_per_pixel: 0.85 },
+      { scale: 250, units_per_pixel: 1.7 },
+    ],
     bearings: 6,
     maxRequests: 60,
     maxMilliseconds: 45000,
     maxDeviceLookups: 8,
     maxStateReads: 4,
     maxSourceHops: 6,
-    concurrency: 4,
   };
 
   /** `F562541` or `5236366`, at the start of a display. */
@@ -108,35 +113,6 @@
     };
   };
 
-  /** Bounded concurrency: GNAT answers in ~1.7 s, so serial samples are unusable. */
-  const mapLimit = async (items, limit, fn) => {
-    const out = new Array(items.length);
-    let cursor = 0;
-    const workers = [];
-    const width = Math.max(1, Math.min(limit || 4, items.length));
-    for (let worker = 0; worker < width; worker += 1) {
-      workers.push(
-        (async () => {
-          while (cursor < items.length) {
-            const index = cursor;
-            cursor += 1;
-            out[index] = await fn(items[index], index);
-          }
-        })()
-      );
-    }
-    await Promise.all(workers);
-    return out;
-  };
-
-  const samplesOf = (point, radiusMeters, bearings) => {
-    const list = [];
-    for (let index = 0; index < bearings; index += 1) {
-      list.push(offsetOf(point.lon, point.lat, radiusMeters, (2 * Math.PI * index) / bearings));
-    }
-    return list;
-  };
-
   /**
    * One pole ring, sampled in parallel, with the narrow radius first.
    *
@@ -146,22 +122,18 @@
   const ringAt = async ({ client, settings, spend, canSpend, point }) => {
     const rows = [];
     let complete = true;
-    for (const radius of settings.radiiMeters) {
-      const samples = samplesOf(point, radius, settings.bearings);
-      const batches = await mapLimit(samples, settings.concurrency, async (sample) => {
-        if (!canSpend()) {
-          complete = false;
-          return [];
-        }
-        try {
-          return (await spend(() => client.pointObjects(sample.lon, sample.lat))) || [];
-        } catch (error) {
-          return [];
-        }
-      });
-      for (const batch of batches) {
-        for (const row of Array.isArray(batch) ? batch : []) rows.push(row);
+    for (const tuning of settings.pointTuning) {
+      if (!canSpend()) {
+        complete = false;
+        break;
       }
+      let batch = [];
+      try {
+        batch = (await spend(() => client.pointObjects(point.lon, point.lat, tuning))) || [];
+      } catch (error) {
+        batch = [];
+      }
+      for (const row of Array.isArray(batch) ? batch : []) rows.push(row);
       if (rows.some((row) => codePairOf(row && row.display))) break;
     }
     return { rows, complete };
@@ -281,7 +253,7 @@
         if (!objects.has(key)) objects.set(key, { id: row.id, display: row.display, type: row.type });
       }
       found = ring.rows.some((row) => codePairOf(row && row.display));
-      ringed.push({ code: entry.code, radiusMetersUsed: found ? settings.radiiMeters[0] : settings.radiiMeters[settings.radiiMeters.length - 1] });
+      ringed.push({ code: entry.code, calibrated: found });
     }
 
     const all = [...objects.values()];
@@ -890,7 +862,7 @@
     points.filter((entry) => entry.role === "objeto" || entry.role === "punto de faenas").map((entry) => entry.code);
 
   return {
-    version: "1.5.0",
+    version: "1.6.0",
     auditPermit,
     convexHull,
     findWorkZone,

@@ -91,12 +91,21 @@
           `get_objects_geojson(${ids.length})`
         );
       },
-      pointObjects(lon, lat) {
-        return request(
-          URL_WMC,
-          withViewport({ action: "get_objects_info_for_point", lonlat: w.Ext.encode({ lon, lat }) }),
-          "get_objects_info_for_point"
-        );
+      /**
+       * One calibrated point query.
+       *
+       * `scale` decides which layers the server includes and `units_per_pixel` is
+       * the capture radius in metres per pixel; both are per request, so the
+       * radius no longer depends on the zoom. The tuning must be applied AFTER the
+       * viewport params: `Ext.apply(base, viewport)` would overwrite it.
+       */
+      pointObjects(lon, lat, tuning) {
+        const params = withViewport({ action: "get_objects_info_for_point", lonlat: w.Ext.encode({ lon, lat }) });
+        if (tuning) {
+          if (typeof tuning.scale === "number") params.scale = tuning.scale;
+          if (typeof tuning.units_per_pixel === "number") params.units_per_pixel = tuning.units_per_pixel;
+        }
+        return request(URL_WMC, params, "get_objects_info_for_point");
       },
       async objectTitle(objectId) {
         const definition = await request(

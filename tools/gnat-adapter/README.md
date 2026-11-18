@@ -177,8 +177,12 @@ figuran como apertura salen como advertencia: ahí es donde falta una maniobra.
   informan por separado y no se colapsan.
 - **Presupuesto primero.** 60 requests / 45 s por defecto. Al agotarse devuelve lo
   medido con `status: "parcial"` y su motivo; si no midió nada, `no concluyente`.
-- **Muestreo en paralelo (4).** GNAT responde en ~1,7 s por request: un anillo de 6
-  muestras en serie son 10 s. En paralelo baja a ~3 s.
+- **Una consulta por poste.** `get_objects_info_for_point` recibe `scale` (capas) y
+  `units_per_pixel` (radio de captura) por request, así que un poste cuesta **1
+  request** y no 6. Medido: sin calibrar devuelve 17 objetos y 0 tramos; calibrado
+  con `scale: 250, units_per_pixel: 0.85` devuelve 5 objetos y 2 tramos.
+- **Cuidado con el orden.** `Ext.apply(base, viewportParams)` pisa `scale` y
+  `units_per_pixel`: hay que aplicarlos después.
 - **Reloj compartido.** Auditoría y verificación usan el mismo contador: el
   presupuesto es total, no por fase.
 - **Progreso visible.** `[gnatZone] 20 requests · 34 s` cada 20 requests, para que

@@ -88,7 +88,7 @@ function makeClient(config = {}) {
   );
   assert.deepEqual(result.zone.voltages, ["mt"]);
   assert.equal(result.boundary.length, 0);
-  assert.equal(result.budget.requests, 1 + 1 + 6, "one search, one geometry, six ring samples at 5 m");
+  assert.equal(result.budget.requests, 3, "one search, one geometry, one calibrated point query");
 }
 
 // --- two poles: the switch at F517572 closes the zone ------------------------
@@ -132,9 +132,10 @@ function makeClient(config = {}) {
 // --- a truncated run that did measure stays partial -------------------------
 {
   const client = makeClient();
-  const result = await zone.findWorkZone({ poleCodes: ["F517570", "F517572"], client, settings: { maxRequests: 14 } });
+  // One pole costs three requests now, so the cut lands on the second pole.
+  const result = await zone.findWorkZone({ poleCodes: ["F517570", "F517572"], client, settings: { maxRequests: 5 } });
 
-  assert.ok(result.budget.requests <= 14);
+  assert.ok(result.budget.requests <= 5);
   assert.ok(result.zone.edges.length > 0, "some spans were measured before the cut");
   assert.equal(result.status, "parcial");
   assert.match(result.reason, /presupuesto agotado/);
@@ -235,7 +236,7 @@ function makeChainClient(config = {}) {
     workCodes: ["PA1002", "PA1003"],
     openCodes: ["PA1001", "PA1004"],
     client: makeChainClient(),
-    settings: { maxRequests: 8 },
+    settings: { maxRequests: 3 },
   });
   assert.equal(result.valid, false, "incomplete evidence never approves an opening");
   assert.match(result.reason, /presupuesto agotado/);
