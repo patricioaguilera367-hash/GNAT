@@ -1799,6 +1799,9 @@
   // VERIFICACIÓN DE ZONA (T/D/F) — el permiso se contrasta contra la red
   // =========================================================================
   let zoneResultLayer = null;
+  let zoneModify = null;
+  let zoneGenerated = null;
+  let zoneGeneratedAislada = false;
 
   function permitFromMap() {
     const rows = state.points
@@ -1824,30 +1827,63 @@
   }
 
   function clearZoneLayer() {
+    if (zoneModify) {
+      try { map.removeInteraction(zoneModify); } catch (error) { /* already gone */ }
+      zoneModify = null;
+    }
     if (zoneResultLayer) {
       try { map.removeLayer(zoneResultLayer); } catch (error) { /* already gone */ }
       zoneResultLayer = null;
     }
   }
 
-  function drawZoneResult(result) {
+  /**
+   * The generated outline is a visual reference, not the electrical boundary: a real
+   * feeder drops spurs that a hull cannot follow. So it is drawn and then left
+   * editable — drag a vertex, ctrl+click on an edge to add one, alt+click to remove
+   * it. Editing never recalculates anything; "Restaurar" puts the generated shape back.
+   */
+  function paintZoneOutline(outline, aislada) {
     clearZoneLayer();
-    const outline = Array.isArray(result.outline) ? result.outline : [];
-    if (outline.length < 3) return;
+    if (!Array.isArray(outline) || outline.length < 3) return;
     const ring = outline.map((pair) => ol.proj.fromLonLat([Number(pair[0]), Number(pair[1])]));
     ring.push(ring[0]);
     const feature = new ol.Feature({ geometry: new ol.geom.Polygon([ring]) });
-    const aislada = Boolean(result.verification && result.verification.valid);
     zoneResultLayer = new ol.layer.Vector({
       source: new ol.source.Vector({ features: [feature] }),
       style: new ol.style.Style({
         fill: new ol.style.Fill({ color: aislada ? "rgba(31,157,85,.10)" : "rgba(217,43,43,.14)" }),
-        stroke: new ol.style.Stroke({ color: aislada ? "#1f9d55" : "#d92b2b", width: 2.5, lineDash: [7, 5] })
+        stroke: new ol.style.Stroke({ color: aislada ? "#1f9d55" : "#d92b2b", width: 2.5, lineDash: [7, 5] }),
+        image: new ol.style.Circle({
+          radius: 6,
+          fill: new ol.style.Fill({ color: "#ffffff" }),
+          stroke: new ol.style.Stroke({ color: aislada ? "#1f9d55" : "#d92b2b", width: 2 })
+        })
       }),
       zIndex: 60
     });
     map.addLayer(zoneResultLayer);
+    if (typeof ol.interaction === "object" && ol.interaction.Modify) {
+      zoneModify = new ol.interaction.Modify({ source: zoneResultLayer.getSource(), pixelTolerance: 9 });
+      map.addInteraction(zoneModify);
+      showToast("Zona dibujada. Arrastrá un vértice; Ctrl+clic en un borde agrega uno, Alt+clic lo borra.");
+    }
   }
+
+  function restoreZoneOutline() {
+    if (!zoneGenerated) {
+      showToast("No hay un polígono generado para restaurar.", true);
+      return;
+    }
+    paintZoneOutline(zoneGenerated, zoneGeneratedAislada);
+  }
+
+  function drawZoneResult(result) {
+    zoneGenerated = Array.isArray(result.outline) ? result.outline : null;
+    zoneGeneratedAislada = Boolean(result.verification && result.verification.valid);
+    paintZoneOutline(zoneGenerated, zoneGeneratedAislada);
+  }
+
 
   function showZoneReport(result) {
     modalBackdrop.replaceChildren();
@@ -1924,6 +1960,9 @@
 
       const bVerify = el("button", "pop-item", "✅ Verificar zona (T/D/F)...", pop);
       bVerify.onclick = () => { closePopover(); verificarZona(); };
+
+      const bRestore = el("button", "pop-item", "↺ Restaurar polígono generado", pop);
+      bRestore.onclick = () => { closePopover(); restoreZoneOutline(); };
 
       el("div", "pop-sep", null, pop);
       const bPdf = el("button", "pop-item", "🖨 Exportar plano PDF (A1 / Atlas)...", pop);

@@ -83,6 +83,15 @@ de cada poste (`live: "si"|"no"|"desconocido"`). Un poste que es a la vez zona
 de trabajo y apertura nunca se declara sin tensión, y con eso `valid` es `false`.
 Sin `side` informado, el lado opuesto se da por posible fuente de energía.
 
+**S15 — La envolvente es una referencia visual, y se edita a mano.**
+El polígono que genera el motor es una aproximación geométrica del conjunto de
+postes, no la zona eléctrica: la red tiene derivaciones y tramos que quedan fuera
+o de más. Deducir el contorno eléctrico exacto exige contexto visual que el código
+no tiene, así que no se persigue. El polígono generado se puede **editar**: mover
+vértices, agregar y quitar nodos. Una vez editado a mano no se recalcula solo; el
+original se guarda aparte para poder volver a él. Su función es que el supervisor
+vea y ajuste la zona, no que el motor tenga razón.
+
 ## Tasks
 
 - **T1** — `probeAround(lonlat, radius, samples)` en el probe: valida que el
@@ -94,6 +103,8 @@ Sin `side` informado, el lado opuesto se da por posible fuente de energía.
   como semilla, dibujo de la zona en la capa propia.
 - **T4** — Modo interruptor visual: pintar aguas abajo lo que queda sin tensión al
   marcar aperturas (ver *Ideas registradas*).
+- **T5** — Envolvente editable: nodos arrastrables, agregar y quitar vértices,
+  restaurar el original generado. Depende de T3 (capa propia de la zona).
 
 ## Roadmap
 
@@ -210,3 +221,11 @@ ensamblados, desconectadores fusibles, estribos, indicadores de falla) y **3 con
 guion** — o sea, los tramos aparecen por nombre pero de forma parcial. Sirve como
 catálogo de `object_id`/`surrogate_in_map_id` en un request, no como fuente de
 aristas.
+
+**L12** — (Dueño, sobre el polígono generado) «resolver el dibujo del poligono, está
+bien, perfecto. pero deberia dejar editarse manual una vez generado arrastrando y
+añadiendo nodos de ajuste tal vez, o bien, si se puede mejorar la generación (lo
+veo dificil porque necesita contexto visual, mejor, ej aqui quedan unas derivaciones
+fuera y algunas lineas de la desconectada igual, creo que es muy dificil hacerlo por
+codigo tal vez y me dirás tu, es mejor hacerlo como edición manual nomas.total, es
+una ref. visual.» → S15, T5. El dueño tiene razón: se edita a mano.
