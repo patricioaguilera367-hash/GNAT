@@ -40,6 +40,9 @@
     maxDeviceLookups: 8,
     maxStateReads: 4,
     maxSourceHops: 6,
+    // A code names several objects (poste, switch, estructura); the structure is the
+    // one whose sheet lists cables, so a few candidates are tried before giving up.
+    maxStructureTries: 3,
   };
 
   /** `F562541` or `5236366`, at the start of a display. */
@@ -563,6 +566,58 @@
     };
 
     const diagnostics = [];
+    const nodeCache = new Map();
+
+    /**
+     * Neighbours of a pole, straight from the structure sheet.
+     *
+     * `textual_search` returns every object carrying the code — poste, switch,
+     * estructura — so the structure has to be found among them: it is the one whose
+     * sheet answers with `A - B` cable pairs.
+     */
+    const metadataNeighbours = async (code) => {
+      if (!settings.metadata) return null;
+      if (nodeCache.has(code)) return nodeCache.get(code);
+      let result = null;
+      let rows = [];
+      try {
+        rows = (await spend(() => client.search(code))) || [];
+      } catch (error) {
+        rows = [];
+      }
+      const candidates = (Array.isArray(rows) ? rows : [])
+        .filter((row) => row && row.object_id !== undefined)
+        .slice(0, Math.max(1, settings.maxStructureTries || 3));
+      for (const row of candidates) {
+        if (!canSpend()) break;
+        let html = "";
+        try {
+          html = safeText(await spend(() => client.sectionHtml(row.object_id, settings.sectionId)));
+        } catch (error) {
+          continue;
+        }
+        const text = stripTags(html);
+        const pairs = codePairsIn(text);
+        if (pairs.length === 0) continue;
+        const neighbours = [];
+        for (const pair of pairs) {
+          const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
+          if (other && other !== code && neighbours.indexOf(other) === -1) neighbours.push(other);
+        }
+        if (neighbours.length === 0) continue;
+        result = {
+          pairs,
+          neighbours,
+          tensionKv: tensionOfSection(text),
+          state: parseOperatingState(html),
+          display: safeText(row.display),
+        };
+        break;
+      }
+      nodeCache.set(code, result);
+      return result;
+    };
+
     while (queue.length > 0) {
       const code = queue.shift();
       if (cut.has(code)) {
@@ -585,7 +640,23 @@
 
       let found = false;
       let tramos = 0;
-      const ring = await ringAt({ client, settings, spend, canSpend, point, code });
+      let fuente = "anillo";
+      const meta = await metadataNeighbours(code);
+      if (meta && meta.neighbours.length > 0) {
+        fuente = "metadata";
+        for (const other of meta.neighbours) {
+          tramos += 1;
+          if (cut.has(other)) {
+            if (boundary.indexOf(other) === -1) boundary.push(other);
+          } else if (!island.has(other) && boundary.indexOf(other) === -1) {
+            island.add(other);
+            queue.push(other);
+          }
+        }
+      }
+      const ring = meta && meta.neighbours.length > 0
+        ? { rows: [], complete: true }
+        : await ringAt({ client, settings, spend, canSpend, point, code });
       if (!ring.complete) partial = true;
       for (const row of ring.rows) {
         const pair = codePairOf(row && row.display);
@@ -619,6 +690,7 @@
       }
       diagnostics.push({
         code,
+        fuente,
         objetos: ring.rows.length,
         tramos,
         completo: ring.complete,
@@ -1015,8 +1087,38 @@
     };
   };
 
+  /**
+   * A cable is named after the two structures it joins: `F723227 - F97181`.
+   * That pair IS the edge, and a structure sheet lists it under Vecinos, so the
+   * graph comes from metadata: no radial probe, no guessing the voltage.
+   */
+  const CODE_PAIR_IN_TEXT = /\b([A-Z]{0,3}\d{4,})\s*[-–]\s*([A-Z]{0,3}\d{4,})\b/g;
+  const codePairsIn = (text) => {
+    const out = [];
+    const seen = new Set();
+    CODE_PAIR_IN_TEXT.lastIndex = 0;
+    let match = CODE_PAIR_IN_TEXT.exec(text);
+    while (match) {
+      const key = match[1] + "|" + match[2];
+      const reverse = match[2] + "|" + match[1];
+      if (!seen.has(key) && !seen.has(reverse)) {
+        seen.add(key);
+        out.push([match[1], match[2]]);
+      }
+      match = CODE_PAIR_IN_TEXT.exec(text);
+    }
+    return out;
+  };
+
+  const tensionOfSection = (text) => {
+    const hit = /Tensi[oó]n del circuito:\s*([\d.,]+)\s*kV/i.exec(text);
+    if (!hit) return null;
+    const value = Number(hit[1].replace(",", "."));
+    return Number.isFinite(value) ? value : null;
+  };
+
   return {
-    version: "1.9.3",
+    version: "1.10.0",
     buildProjectFromPreset,
     auditPermit,
     convexHull,
@@ -1025,6 +1127,8 @@
     parseOperatingState,
     codeOf,
     codePairOf,
+    codePairsIn,
+    tensionOfSection,
     voltageOf,
   };
 });

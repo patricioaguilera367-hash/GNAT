@@ -427,6 +427,55 @@ function makeChainClient(config = {}) {
   assert.deepEqual(project.bloques.map((block) => block.id), ["D", "T", "F"]);
 }
 
+// Discovery from metadata: a structure sheet names its cables, so no radius probe.
+{
+  let pointQueries = 0;
+  const client = {
+    async search(term) {
+      const index = CHAIN.indexOf(term);
+      if (index === -1) return [];
+      return [{ object_id: 9000 + index, surrogate_in_map_id: 9000 + index, display: term }];
+    },
+    async geojson(ids) {
+      const index = Number(ids[0]) - 9000;
+      const point = chainPoint(index);
+      return { type: "Feature", geometry: { type: "Point", coordinates: [point.lon, point.lat] }, id: ids[0] };
+    },
+    async pointObjects() {
+      pointQueries += 1;
+      return [];
+    },
+    async objectTitle() {
+      return "";
+    },
+    async sectionHtml(id) {
+      const index = Number(id) - 9000;
+      const left = CHAIN[index - 1];
+      const right = CHAIN[index + 1];
+      const rows = [left, right]
+        .filter(Boolean)
+        .map((other) => `<td>${other} - ${CHAIN[index]}</td>`)
+        .join("");
+      return `<table><tr><td>Vecinos</td></tr>${rows}` +
+        `<tr><td>Tensión del circuito:</td><td>13.2 kV</td></tr>` +
+        `<tr><td>Estado operativo:</td><td>normalmente cerrado (NC)</td></tr></table>`;
+    },
+  };
+  const result = await zone.verifyAperturas({
+    workCodes: ["PA1004"],
+    openCodes: [{ code: "PA1002" }],
+    client,
+    settings: { maxRequests: 200, metadata: true },
+  });
+  // The walk itself never probes: the remaining point queries belong to the
+  // opening's side analysis, which still reads spans geometrically.
+  assert.equal(result.diagnostics.every((entry) => entry.fuente === "metadata"), true);
+  assert.deepEqual(result.island.sort(), ["PA1003", "PA1004", "PA1005"]);
+  assert.deepEqual(result.boundary, ["PA1002"]);
+  assert.equal(result.valid, true, result.reason);
+  assert.equal(result.diagnostics[0].fuente, "metadata");
+}
+
 // The outline is a hull, not the input order.
 {
   const square = [

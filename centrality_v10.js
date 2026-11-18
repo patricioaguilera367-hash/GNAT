@@ -1932,7 +1932,10 @@
     el("div", "", "Isla sin tensión (" + island.length + "): " + (island.length ? island.join(", ") : "—"), body);
     const diagnostics = (result.verification && result.verification.diagnostics) || [];
     const sinTramos = diagnostics.filter((entry) => entry.tramos === 0);
+    const viaMetadata = diagnostics.filter((entry) => entry.fuente === "metadata").length;
+    const viaAnillo = diagnostics.length - viaMetadata;
     const walkInfo = el("div", "", "Postes recorridos: " + diagnostics.length +
+      " (metadata: " + viaMetadata + " · anillo: " + viaAnillo + ")" +
       (sinTramos.length ? " · sin tramos MT: " + sinTramos.map((entry) => entry.code).join(", ") : ""), body);
     walkInfo.style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:4px";
     const boundary = (result.verification && result.verification.boundary) || [];

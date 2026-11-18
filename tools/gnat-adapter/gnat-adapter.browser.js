@@ -122,6 +122,9 @@
   /** Progress output, because a run of hundreds of 1.7 s requests looks hung. */
   function withProgress(options) {
     const settings = Object.assign({}, (options && options.settings) || {});
+    // Live runs read topology from the structure sheets; the radial probe stays as a
+    // fallback for a pole whose sheet answers nothing.
+    if (settings.metadata === undefined) settings.metadata = true;
     if (!settings.onProgress) {
       settings.onProgress = (info) =>
         console.info(`[gnatZone] ${info.requests} requests · ${Math.round(info.elapsedMs / 1000)} s`);
