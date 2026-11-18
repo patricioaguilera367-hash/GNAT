@@ -25,9 +25,14 @@
     // GNAT's point query takes its capture radius from `units_per_pixel` and the
     // visible layers from `scale`, both per request. One calibrated query replaces
     // a ring of six; the second entry is only tried when the first finds nothing.
+    // Capture radius escalates. A span is drawn between its two bornes, and in
+    // rural sectors those sit metres away from the pole point: a radius tuned on
+    // one feeder found two spans there and none on a neighbouring one.
     pointTuning: [
       { scale: 250, units_per_pixel: 0.85 },
       { scale: 250, units_per_pixel: 1.7 },
+      { scale: 500, units_per_pixel: 4 },
+      { scale: 1000, units_per_pixel: 9 },
     ],
     bearings: 6,
     maxRequests: 60,
@@ -612,7 +617,21 @@
           }
         }
       }
-      diagnostics.push({ code, objetos: ring.rows.length, tramos, completo: ring.complete });
+      diagnostics.push({
+        code,
+        objetos: ring.rows.length,
+        tramos,
+        completo: ring.complete,
+        // A pole with no traversable span is the one worth showing: without what
+        // the server actually returned, "0 tramos" is a mystery instead of a fact.
+        muestras: tramos === 0
+          ? ring.rows.slice(0, 6).map((row) => ({
+              display: safeText(row && row.display),
+              tipo: safeText(row && row.type),
+              voltaje: voltageOf(row),
+            }))
+          : [],
+      });
     }
 
     const truncated = partial || (canSpend() === false && queue.length > 0);
@@ -997,7 +1016,7 @@
   };
 
   return {
-    version: "1.9.1",
+    version: "1.9.3",
     buildProjectFromPreset,
     auditPermit,
     convexHull,

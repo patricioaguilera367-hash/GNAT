@@ -1849,24 +1849,50 @@
     const ring = outline.map((pair) => ol.proj.fromLonLat([Number(pair[0]), Number(pair[1])]));
     ring.push(ring[0]);
     const feature = new ol.Feature({ geometry: new ol.geom.Polygon([ring]) });
+    const edgeColor = aislada ? "#1f9d55" : "#d92b2b";
+    const handleStyle = () => new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: 7,
+        fill: new ol.style.Fill({ color: "#ffffff" }),
+        stroke: new ol.style.Stroke({ color: edgeColor, width: 3 })
+      })
+    });
+    // A polygon with invisible vertices cannot be edited by hand: the handles have
+    // to be drawn, one per vertex, or nobody knows what to grab.
+    const zoneStyle = (feat) => {
+      const styles = [new ol.style.Style({
+        fill: new ol.style.Fill({ color: aislada ? "rgba(31,157,85,.10)" : "rgba(217,43,43,.14)" }),
+        stroke: new ol.style.Stroke({ color: edgeColor, width: 2.5, lineDash: [7, 5] })
+      })];
+      try {
+        for (const ring of feat.getGeometry().getCoordinates()) {
+          for (const coord of ring) {
+            const dot = handleStyle();
+            dot.setGeometry(new ol.geom.Point(coord));
+            styles.push(dot);
+          }
+        }
+      } catch (error) { /* a degenerate ring still draws its edge */ }
+      return styles;
+    };
     zoneResultLayer = new ol.layer.Vector({
       source: new ol.source.Vector({ features: [feature] }),
-      style: new ol.style.Style({
-        fill: new ol.style.Fill({ color: aislada ? "rgba(31,157,85,.10)" : "rgba(217,43,43,.14)" }),
-        stroke: new ol.style.Stroke({ color: aislada ? "#1f9d55" : "#d92b2b", width: 2.5, lineDash: [7, 5] }),
-        image: new ol.style.Circle({
-          radius: 6,
-          fill: new ol.style.Fill({ color: "#ffffff" }),
-          stroke: new ol.style.Stroke({ color: aislada ? "#1f9d55" : "#d92b2b", width: 2 })
-        })
-      }),
+      style: zoneStyle,
       zIndex: 60
     });
     map.addLayer(zoneResultLayer);
-    if (typeof ol.interaction === "object" && ol.interaction.Modify) {
-      zoneModify = new ol.interaction.Modify({ source: zoneResultLayer.getSource(), pixelTolerance: 9 });
+    if (ol.interaction && ol.interaction.Modify) {
+      try { setCursorMode("nav"); } catch (error) { /* no toolbar yet */ }
+      zoneModify = new ol.interaction.Modify({
+        source: zoneResultLayer.getSource(),
+        pixelTolerance: 12,
+        deleteCondition: (event) => Boolean(event.originalEvent && event.originalEvent.altKey),
+        insertVertexCondition: (event) => Boolean(event.originalEvent && event.originalEvent.ctrlKey)
+      });
       map.addInteraction(zoneModify);
-      showToast("Zona dibujada. Arrastrá un vértice; Ctrl+clic en un borde agrega uno, Alt+clic lo borra.");
+      showToast("Zona dibujada (nodos blancos). Arrastrá un nodo · Ctrl+clic en el borde agrega · Alt+clic borra.");
+    } else {
+      showToast("Zona dibujada. Este mapa no expone el editor de vértices.", true);
     }
   }
 
@@ -1912,6 +1938,21 @@
     const boundary = (result.verification && result.verification.boundary) || [];
     el("div", "", "Frontera: " + (boundary.length ? boundary.join(", ") : "—"), body).style.marginTop = "6px";
     el("div", "", result.budget ? "Coste: " + result.budget.requests + " requests · " + Math.round(result.budget.elapsedMs / 1000) + " s" : "", body).style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:10px";
+
+    el("div", "", "Polígono: referencia visual de la zona verificada. No se guarda con el proyecto; se regenera al verificar. Para ajustarlo: modo Navegar, arrastrar los nodos blancos.", body)
+      .style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:10px;line-height:1.4";
+
+    const sinTramosDiag = diagnostics.filter((entry) => entry.tramos === 0 && entry.muestras && entry.muestras.length);
+    if (sinTramosDiag.length) {
+      el("div", "", "Qué devolvió GNAT en esos postes", body).style.cssText = "font-weight:700;margin-top:12px;margin-bottom:4px";
+      sinTramosDiag.forEach((entry) => {
+        el("div", "", entry.code + " — " + entry.objetos + " objeto(s)", body).style.cssText = "font-size:12px;font-weight:600;margin-top:6px";
+        entry.muestras.forEach((muestra) => {
+          const row = el("div", "", "· " + (muestra.display || "(sin nombre)") + "  [" + (muestra.voltaje || "?") + "]  " + (muestra.tipo || ""), body);
+          row.style.cssText = "font-size:11px;color:var(--text-secondary);margin-left:8px";
+        });
+      });
+    }
 
     const findings = (result.findings || []).filter((f) => f.level !== "info");
     if (findings.length) {
