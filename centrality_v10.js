@@ -1748,6 +1748,53 @@
     });
   };
 
+  /**
+   * Load a permit preset: the supervisor's form (codes and roles, no coordinates)
+   * is resolved against GNAT and becomes a normal project, so the map, the table
+   * and the PDF keep working without a single console command.
+   */
+  async function openPresetPicker() {
+    const picker = doc.createElement("input");
+    picker.type = "file";
+    picker.accept = ".json,application/json";
+    picker.style.display = "none";
+    doc.body.appendChild(picker);
+    picker.onchange = async () => {
+      const file = picker.files && picker.files[0];
+      picker.remove();
+      if (!file) return;
+      const zoneApi = (w && w.__gnatZone) || (typeof globalThis !== "undefined" ? globalThis.__gnatZone : null);
+      if (!zoneApi || typeof zoneApi.buildProjectFromPresetLive !== "function") {
+        showToast("El motor de zona no está cargado: revisá la extensión.", true);
+        return;
+      }
+      let preset = null;
+      try {
+        preset = JSON.parse(await file.text());
+      } catch (error) {
+        showToast("El archivo no es un preset JSON válido.", true);
+        return;
+      }
+      showToast("Resolviendo los puntos del permiso en GNAT...");
+      try {
+        const payload = await zoneApi.buildProjectFromPresetLive(preset, {
+          settings: { maxRequests: 240, maxMilliseconds: 180000 }
+        });
+        loadProjectData(payload);
+        state.projectName = payload.nombre || state.projectName;
+        autosaveNow().catch(() => {});
+        const faltan = Array.isArray(payload.unresolved) ? payload.unresolved.length : 0;
+        showToast(
+          "Permiso cargado: " + payload.registros.length + " punto(s)" +
+          (faltan ? " — " + faltan + " código(s) sin resolver" : "") + "."
+        );
+      } catch (error) {
+        showToast("No se pudo cargar el permiso: " + (error && error.message ? error.message : error), true);
+      }
+    };
+    picker.click();
+  }
+
   btnHerramientas.onclick = () => {
     const r = btnHerramientas.getBoundingClientRect();
     showPopoverAt(r.left, r.bottom + 6, (pop) => {
@@ -1756,6 +1803,9 @@
 
       const bTeam = el("button", "pop-item", "👥 Equipo / Supervisores (CC, TL, RD, JB)...", pop);
       bTeam.onclick = () => { closePopover(); openSupervisorsModal(); };
+
+      const bPreset = el("button", "pop-item", "📄 Cargar permiso PT (preset .json)...", pop);
+      bPreset.onclick = () => { closePopover(); openPresetPicker(); };
 
       el("div", "pop-sep", null, pop);
       const bPdf = el("button", "pop-item", "🖨 Exportar plano PDF (A1 / Atlas)...", pop);

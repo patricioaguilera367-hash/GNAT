@@ -141,6 +141,8 @@
       api.verifyAperturas(Object.assign(withProgress(options), { client: makeClient(options) }));
     api.auditPermitLive = (permit, options) =>
       api.auditPermit(Object.assign(withProgress(options), { permit, client: makeClient(options) }));
+    api.buildProjectFromPresetLive = (preset, options) =>
+      api.buildProjectFromPreset(Object.assign(withProgress(options), { preset, client: makeClient(options) }));
     return api;
   }
 

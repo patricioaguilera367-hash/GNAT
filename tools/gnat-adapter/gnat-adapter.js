@@ -897,8 +897,102 @@
   const derivedZoneCodes = (points) =>
     points.filter((entry) => entry.role === "objeto" || entry.role === "punto de faenas").map((entry) => entry.code);
 
+  /**
+   * Turn a permit preset into a CentralityLocal v5 payload.
+   *
+   * The preset is the supervisor's form: codes and roles, no coordinates, because
+   * coordinates only exist inside GNAT. They are resolved here, once, and the
+   * result is exactly the project V10 already knows how to load and draw.
+   */
+  const buildProjectFromPreset = async ({ preset, client, settings = {} }) => {
+    if (!preset || typeof preset !== "object") throw new Error("preset requerido");
+    const roles = Array.isArray(preset.roles) ? preset.roles : [];
+    const resolved = { maxRequests: 200, maxMilliseconds: 120000, ...settings };
+    const spender = makeSpender(resolved, resolved.budget);
+    resolved.budget = spender.state;
+    const canSpend = spender.canSpend;
+    const spend = spender.spend;
+    const started = Date.now();
+
+    const resolve = async (code) => {
+      if (!canSpend()) return null;
+      const raw = await spend(() => client.search(code));
+      const rows = Array.isArray(raw) ? raw : Array.isArray(raw && raw.rows) ? raw.rows : [];
+      const exact = rows.filter((row) => safeText(codeOf(row && row.display)).toUpperCase() === String(code).toUpperCase());
+      const chosen = (exact.length ? exact : rows)[0];
+      if (!chosen || chosen.surrogate_in_map_id === undefined || !canSpend()) return null;
+      const payload = await spend(() => client.geojson([Number(chosen.surrogate_in_map_id)]));
+      const point = featureList(payload).map(pointOfFeature).find(Boolean);
+      if (!point) return null;
+      return { point, objectId: Number(chosen.object_id), display: safeText(chosen.display) };
+    };
+
+    const memo = new Map();
+    const registros = [];
+    const unresolved = [];
+    const bloques = Array.isArray(preset.bloques) && preset.bloques.length
+      ? preset.bloques.map((block) => ({ id: String(block.id), nombre: safeText(block.nombre), color: safeText(block.color) }))
+      : [
+          { id: "D", nombre: "Desconectada", color: "#d92b2b" },
+          { id: "T", nombre: "Trabajo", color: "#1f9d55" },
+          { id: "F", nombre: "Frontera", color: "#e0a100" },
+        ];
+    const known = new Set(bloques.map((block) => block.id));
+
+    let numero = 0;
+    for (const role of roles) {
+      const codigo = safeText(role && role.codigo).trim();
+      if (!codigo) continue;
+      if (!memo.has(codigo)) memo.set(codigo, await resolve(codigo));
+      const hit = memo.get(codigo);
+      if (!hit) {
+        // A code that does not resolve is never dropped silently: the preset is
+        // the document a supervisor signs, so a missing pole must be visible.
+        if (!unresolved.some((item) => item.codigo === codigo)) {
+          unresolved.push({ codigo, rol: safeText(role.rol), motivo: canSpend() ? "el código no resolvió a un punto" : "presupuesto agotado" });
+        }
+        continue;
+      }
+      const bloque = known.has(safeText(role.bloque)) ? safeText(role.bloque) : "T";
+      numero += 1;
+      registros.push({
+        id: `${safeText(role.rol) || "P"}-${codigo}`,
+        numero,
+        tipo: safeText(role.tipo) === "apertura" ? "APERTURA" : "PUNTO",
+        codigo,
+        longitud: hit.point.lon,
+        latitud: hit.point.lat,
+        supervisorColor: "Sin asignar",
+        supervisorId: "default",
+        bloqueId: bloque,
+        bloques: [bloque],
+        aperturasIds: safeText(role.tipo) === "apertura" ? [codigo] : [],
+        tipoEquipo: safeText(role.equipo),
+        colorPersonalizado: "",
+        rol: safeText(role.rol),
+        gnat: { objectId: hit.objectId, display: hit.display },
+      });
+    }
+
+    return {
+      version: 5,
+      formato: "CentralityLocal",
+      id: "preset-" + safeText(preset.preset || "permiso"),
+      nombre: safeText(preset.nombre) || safeText(preset.preset) || "Preset de permiso",
+      updatedAt: Date.now(),
+      multiSupervisorEnabled: false,
+      supervisors: [],
+      bloques,
+      registros,
+      preset: { id: safeText(preset.preset), version: Number(preset.presetVersion) || 1, circuito: preset.circuito || null },
+      unresolved,
+      budget: { ...spender.state, elapsedMs: Date.now() - started },
+    };
+  };
+
   return {
-    version: "1.7.1",
+    version: "1.8.0",
+    buildProjectFromPreset,
     auditPermit,
     convexHull,
     findWorkZone,

@@ -398,6 +398,35 @@ function makeChainClient(config = {}) {
   assert.equal(probe.valid, true, probe.reason);
 }
 
+// A permit preset becomes the project V10 already loads.
+{
+  const project = await zone.buildProjectFromPreset({
+    preset: {
+      preset: "T-PRUEBA",
+      nombre: "Prueba de preset",
+      roles: [
+        { rol: "D1", codigo: "PA1001", bloque: "D", tipo: "apertura", equipo: "Reconectador" },
+        { rol: "T1", codigo: "PA1002", bloque: "T", tipo: "trabajo" },
+        { rol: "T9", codigo: "NOEXISTE", bloque: "T", tipo: "trabajo" },
+      ],
+    },
+    client: makeChainClient({}),
+    settings: { maxRequests: 100 },
+  });
+  assert.equal(project.formato, "CentralityLocal");
+  assert.equal(project.version, 5);
+  assert.equal(project.registros.length, 2, "solo los códigos que resuelven se vuelven puntos");
+  assert.deepEqual(project.unresolved.map((item) => item.codigo), ["NOEXISTE"]);
+  const trabajo = project.registros.find((row) => row.codigo === "PA1002");
+  assert.equal(trabajo.bloqueId, "T");
+  assert.equal(trabajo.tipo, "PUNTO");
+  assert.ok(Number.isFinite(trabajo.longitud) && Number.isFinite(trabajo.latitud), "el punto trae coordenadas de GNAT");
+  const apertura = project.registros.find((row) => row.codigo === "PA1001");
+  assert.equal(apertura.tipo, "APERTURA");
+  assert.equal(apertura.tipoEquipo, "Reconectador");
+  assert.deepEqual(project.bloques.map((block) => block.id), ["D", "T", "F"]);
+}
+
 // The outline is a hull, not the input order.
 {
   const square = [
