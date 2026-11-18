@@ -233,7 +233,8 @@
       } catch (error) {
         rows = [];
       }
-      const exact = (Array.isArray(rows) ? rows : []).filter((row) => codeOf(row && row.display) === code);
+      rows = Array.isArray(rows) ? rows : [];
+      const exact = rows.filter((row) => codeOf(row && row.display) === code);
       let point = null;
       for (const row of exact) {
         if (!canSpend()) break;
@@ -528,6 +529,7 @@
       return { code: entry.code, side: entry.side, sides, live: "si", reason: "un lado sigue alcanzando una fuente y no se indicó cuál se abre" };
     };
 
+    const searchRows = new Map();
     const resolvePoint = async (code) => {
       const memo = memoOf(settings);
       const key = `point:${code}`;
@@ -543,6 +545,8 @@
       } catch (error) {
         rows = [];
       }
+      rows = Array.isArray(rows) ? rows : [];
+      searchRows.set(code, rows);
       const exact = (Array.isArray(rows) ? rows : []).filter((row) => codeOf(row && row.display) === code);
       for (const row of exact) {
         const ids = [Number(row.surrogate_in_map_id), Number(row.object_id)].filter(
@@ -641,10 +645,26 @@
       let found = false;
       let tramos = 0;
       let fuente = "anillo";
-      const meta = await metadataNeighbours(code);
-      if (meta && meta.neighbours.length > 0) {
-        fuente = "metadata";
-        for (const other of meta.neighbours) {
+      let meta = null;
+      // The textual search matches by prefix, so asking for a pole also returns the
+      // cables whose name starts with it: the spans leaving that pole, already paid
+      // for by the coordinate lookup and until now thrown away.
+      const neighbours = [];
+      for (const row of searchRows.get(code) || []) {
+        const pair = codePairOf(row && row.display);
+        if (!pair) continue;
+        const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
+        if (other && other !== code && neighbours.indexOf(other) === -1) neighbours.push(other);
+      }
+      if (neighbours.length > 0) {
+        fuente = "busqueda";
+      } else {
+        meta = await metadataNeighbours(code);
+        if (meta) for (const other of meta.neighbours) if (neighbours.indexOf(other) === -1) neighbours.push(other);
+        if (neighbours.length > 0) fuente = "metadata";
+      }
+      if (neighbours.length > 0) {
+        for (const other of neighbours) {
           tramos += 1;
           if (cut.has(other)) {
             if (boundary.indexOf(other) === -1) boundary.push(other);
@@ -654,7 +674,7 @@
           }
         }
       }
-      const ring = meta && meta.neighbours.length > 0
+      const ring = neighbours.length > 0
         ? { rows: [], complete: true }
         : await ringAt({ client, settings, spend, canSpend, point, code });
       if (!ring.complete) partial = true;
@@ -1118,7 +1138,7 @@
   };
 
   return {
-    version: "1.10.0",
+    version: "1.10.1",
     buildProjectFromPreset,
     auditPermit,
     convexHull,
