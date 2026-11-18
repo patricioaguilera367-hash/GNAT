@@ -130,10 +130,8 @@
   const memoOf = (settings) => (settings.memo instanceof Map ? settings.memo : null);
 
   const ringAt = async ({ client, settings, spend, canSpend, point, code }) => {
-    const memo = memoOf(settings);
-    const key = code ? `ring:${code}` : null;
-    if (memo && key && memo.has(key)) return memo.get(key);
-
+    // Rings are never memoised. The walk must see the network as it is now, and a
+    // ring cached by an earlier pass can only poison it — the saving is one request.
     const rows = [];
     let complete = true;
     for (const tuning of settings.pointTuning) {
@@ -150,10 +148,7 @@
       for (const row of Array.isArray(batch) ? batch : []) rows.push(row);
       if (rows.some((row) => codePairOf(row && row.display))) break;
     }
-    const result = { rows, complete };
-    // Only a complete ring is worth remembering; a truncated one is not evidence.
-    if (memo && key && complete && rows.length > 0) memo.set(key, result);
-    return result;
+    return { rows, complete };
   };
 
   /** A spender shared across phases, so the wall clock is not restarted mid-run. */
@@ -562,6 +557,7 @@
       return null;
     };
 
+    const diagnostics = [];
     while (queue.length > 0) {
       const code = queue.shift();
       if (cut.has(code)) {
@@ -583,11 +579,15 @@
       seenPoints.add(code);
 
       let found = false;
+      let tramos = 0;
       const ring = await ringAt({ client, settings, spend, canSpend, point, code });
       if (!ring.complete) partial = true;
       for (const row of ring.rows) {
         const pair = codePairOf(row && row.display);
-        if (pair && voltageOf(row) === voltage) {
+        // A permit is medium voltage unless it says otherwise: an undefined
+        // voltage here would silently compare against nothing and never expand.
+        if (pair && voltageOf(row) === (voltage || "mt")) {
+          tramos += 1;
           found = true;
           const other = pair[0] === code ? pair[1] : pair[1] === code ? pair[0] : null;
           if (other && !island.has(other) && boundary.indexOf(other) === -1) {
@@ -612,6 +612,7 @@
           }
         }
       }
+      diagnostics.push({ code, objetos: ring.rows.length, tramos, completo: ring.complete });
     }
 
     const truncated = partial || (canSpend() === false && queue.length > 0);
@@ -681,6 +682,7 @@
       voltage,
       island: [...island],
       boundary,
+      diagnostics,
       sources,
       failed,
       unresolved: queue,
@@ -995,7 +997,7 @@
   };
 
   return {
-    version: "1.9.0",
+    version: "1.9.1",
     buildProjectFromPreset,
     auditPermit,
     convexHull,

@@ -1868,6 +1868,11 @@
 
     const island = (result.verification && result.verification.island) || [];
     el("div", "", "Isla sin tensión (" + island.length + "): " + (island.length ? island.join(", ") : "—"), body);
+    const diagnostics = (result.verification && result.verification.diagnostics) || [];
+    const sinTramos = diagnostics.filter((entry) => entry.tramos === 0);
+    const walkInfo = el("div", "", "Postes recorridos: " + diagnostics.length +
+      (sinTramos.length ? " · sin tramos MT: " + sinTramos.map((entry) => entry.code).join(", ") : ""), body);
+    walkInfo.style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:4px";
     const boundary = (result.verification && result.verification.boundary) || [];
     el("div", "", "Frontera: " + (boundary.length ? boundary.join(", ") : "—"), body).style.marginTop = "6px";
     el("div", "", result.budget ? "Coste: " + result.budget.requests + " requests · " + Math.round(result.budget.elapsedMs / 1000) + " s" : "", body).style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:10px";
