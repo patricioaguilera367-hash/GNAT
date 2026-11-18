@@ -2337,10 +2337,10 @@
     const card = el("div", "modal-card", null, modalBackdrop);
     const head = el("div", "modal-head", null, card);
     el("h2", "", "Centrality · Proyectos", head);
-    if (state.points.length > 0) {
-      const bClose = el("button", "btn-outline", "Volver al mapa", head);
-      bClose.onclick = closeModal;
-    }
+    // The way out must never depend on having data: an empty project is a valid
+    // place to work, and starting from zero is exactly when this modal opens.
+    const bClose = el("button", "btn-outline", state.points.length > 0 ? "Volver al mapa" : "Empezar en blanco", head);
+    bClose.onclick = closeModal;
 
     const body = el("div", "modal-body", null, card);
     const dz = el("div", "dropzone", null, body);
