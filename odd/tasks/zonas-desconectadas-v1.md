@@ -187,3 +187,26 @@ poste. En radial `fuente — a | poste | b — … — remate`, abrir `b` deja e
 como remate energizado, y abrir `a` lo deja sin tensión. El motor deduce el lado
 caminando hacia la fuente (`walkToSource`), y un poste que sigue con tensión no
 invalida la zona: se informa en `warnings`.
+
+**L9** — Lectura del código cliente de GNAT (`map.js`, `gis.js`), no del servidor.
+`svc_wmc.php` tiene 11 acciones y **ninguna de área**: `textual_search`,
+`get_objects_geojson`, `get_objects_info_for_point`, `gis_search_objects`,
+`get_popup_actions_for_point`, `execute_popup_action` (mutación),
+`list_bookmarks`, `create_annotation` (mutación), `delete_nearby_annotation`
+(mutación), `get_visualization_settings`, `get_default_visualization_for_space`.
+`startPick('polygon')` dibuja en OpenLayers y devuelve coordenadas al callback
+local: no consulta nada.
+
+**L10** — `getViewportParams()` es
+`{visualization_id, space_id, bounds, scale: resolution*1000, units_per_pixel: resolution}`.
+`scale` decide qué capas enciende el servidor; `units_per_pixel` decide el radio de
+captura del punto. **Son independientes del zoom si se sobrescriben en los params**,
+así que el anillo de 6 muestras era innecesario: basta una consulta puntual con
+`scale: 250` y `units_per_pixel: 0.85`. Ojo: `Ext.apply(base, viewportParams)` pisa
+los valores de `base`, hay que aplicarlos **después**.
+
+**L11** — `textual_search("FAG16")` devolvió 40 objetos del sector (postes,
+ensamblados, desconectadores fusibles, estribos, indicadores de falla) y **3 con
+guion** — o sea, los tramos aparecen por nombre pero de forma parcial. Sirve como
+catálogo de `object_id`/`surrogate_in_map_id` en un request, no como fuente de
+aristas.
