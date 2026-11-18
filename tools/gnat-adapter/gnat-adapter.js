@@ -154,7 +154,10 @@
         batch = [];
       }
       for (const row of Array.isArray(batch) ? batch : []) rows.push(row);
-      if (rows.some((row) => codePairOf(row && row.display))) break;
+      // Keep widening until a medium-voltage pair appears. Stopping at the first
+      // pair found let a low-voltage cable end the search, which is why the MT line
+      // drawn on the map never arrived.
+      if (rows.some((row) => codePairOf(row && row.display) && voltageOf(row) === "mt")) break;
     }
     return { rows, complete };
   };
@@ -570,6 +573,7 @@
     };
 
     const diagnostics = [];
+    const route = [];
     const nodeCache = new Map();
 
     /**
@@ -670,6 +674,7 @@
             if (boundary.indexOf(other) === -1) boundary.push(other);
           } else if (!island.has(other) && boundary.indexOf(other) === -1) {
             island.add(other);
+            route.push({ from: code, to: other });
             queue.push(other);
           }
         }
@@ -793,6 +798,7 @@
       voltage,
       island: [...island],
       boundary,
+      route,
       diagnostics,
       sources,
       failed,
@@ -1138,7 +1144,7 @@
   };
 
   return {
-    version: "1.11.0",
+    version: "1.11.1",
     buildProjectFromPreset,
     auditPermit,
     convexHull,

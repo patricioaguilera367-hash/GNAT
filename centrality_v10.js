@@ -323,7 +323,8 @@
       multiSupervisorEnabled: state.multiSupervisorEnabled,
       supervisors: [...state.supervisors.values()],
       bloques: [...state.zones.values()].map(z => ({ id: z.id, nombre: z.name, color: z.color })),
-      registros
+      registros,
+      zona: zoneOutlineForSave()
     };
   }
 
@@ -1849,8 +1850,7 @@
     const ring = outline.map((pair) => ol.proj.fromLonLat([Number(pair[0]), Number(pair[1])]));
     ring.push(ring[0]);
     const feature = new ol.Feature({ geometry: new ol.geom.Polygon([ring]) });
-    // The zone is a reference, not a verdict: always the same neutral colour.
-    const edgeColor = "#e0761a";
+    const edgeColor = aislada ? "#1f9d55" : "#d92b2b";
     const handleStyle = () => new ol.style.Style({
       image: new ol.style.Circle({
         radius: 7,
@@ -1862,7 +1862,7 @@
     // to be drawn, one per vertex, or nobody knows what to grab.
     const zoneStyle = (feat) => {
       const styles = [new ol.style.Style({
-        fill: new ol.style.Fill({ color: "rgba(224,118,26,.10)" }),
+        fill: new ol.style.Fill({ color: aislada ? "rgba(31,157,85,.10)" : "rgba(217,43,43,.14)" }),
         stroke: new ol.style.Stroke({ color: edgeColor, width: 2.5, lineDash: [7, 5] })
       })];
       try {
@@ -1889,7 +1889,56 @@
     }
   }
 
+  let zoneRouteLayer = null;
   let zoneEditBanner = null;
+
+  function clearZoneRoute() {
+    if (zoneRouteLayer) {
+      try { map.removeLayer(zoneRouteLayer); } catch (error) { /* already gone */ }
+      zoneRouteLayer = null;
+    }
+  }
+
+  /**
+   * The pole route: the medium-voltage spans the walk actually followed, drawn in
+   * order. Coordinates come from the points already resolved, so it costs nothing.
+   */
+  function drawZoneRoute(result) {
+    clearZoneRoute();
+    const route = (result.verification && result.verification.route) || [];
+    if (!route.length) return;
+    const byCode = new Map();
+    for (const entry of result.points || []) {
+      if (entry && entry.code && entry.lonlat) byCode.set(entry.code, entry.lonlat);
+    }
+    for (const feature of state.points) {
+      const code = String(feature.get("codigo") || "");
+      if (!code || byCode.has(code)) continue;
+      const coords = feature.getGeometry() && feature.getGeometry().getCoordinates();
+      if (!coords) continue;
+      const lonlat = ol.proj.toLonLat(coords, map.getView().getProjection());
+      byCode.set(code, { lon: lonlat[0], lat: lonlat[1] });
+    }
+    const segments = [];
+    for (const step of route) {
+      const from = byCode.get(step.from);
+      const to = byCode.get(step.to);
+      if (!from || !to) continue;
+      segments.push(new ol.Feature({
+        geometry: new ol.geom.LineString([
+          ol.proj.fromLonLat([from.lon, from.lat]),
+          ol.proj.fromLonLat([to.lon, to.lat])
+        ])
+      }));
+    }
+    if (!segments.length) return;
+    zoneRouteLayer = new ol.layer.Vector({
+      source: new ol.source.Vector({ features: segments }),
+      style: new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#2f6fd0", width: 4 }) }),
+      zIndex: 59
+    });
+    map.addLayer(zoneRouteLayer);
+  }
 
   function setZoneEditMode(on) {
     if (!zoneResultLayer) {
@@ -1934,6 +1983,23 @@
     }
   }
 
+  /** The edited outline travels with the project: it is the supervisor's own drawing. */
+  function zoneOutlineForSave() {
+    if (!zoneResultLayer) return null;
+    try {
+      const geometry = zoneResultLayer.getSource().getFeatures()[0].getGeometry();
+      const ring = geometry.getCoordinates()[0];
+      const outline = [];
+      for (const coord of ring) {
+        const lonlat = ol.proj.toLonLat(coord, map.getView().getProjection());
+        outline.push([Number(lonlat[0].toFixed(7)), Number(lonlat[1].toFixed(7))]);
+      }
+      return { outline, aislada: zoneGeneratedAislada, guardada: Date.now() };
+    } catch (error) {
+      return null;
+    }
+  }
+
   function restoreZoneOutline() {
     if (!zoneGenerated) {
       showToast("No hay un polígono generado para restaurar.", true);
@@ -1960,9 +2026,10 @@
 
     const body = el("div", "modal-body", null, card);
     const verdict = el("div", "", null, body);
-    verdict.style.cssText = "font-weight:800;font-size:15px;margin-bottom:6px;color:#e0761a";
-    verdict.textContent = "Zona de referencia: " + result.points.length + " poste(s)";
-    const why = el("div", "", "Las aperturas y su suficiencia son criterio del supervisor. Esto es una ayuda visual para ubicar códigos y tramos.", body);
+    const aislada = Boolean(result.verification && result.verification.valid);
+    verdict.style.cssText = "font-weight:800;font-size:15px;margin-bottom:6px;color:" + (aislada ? "#1f9d55" : "#d92b2b");
+    verdict.textContent = aislada ? "La zona queda aislada." : "La zona NO queda aislada.";
+    const why = el("div", "", (result.verification && result.verification.reason ? result.verification.reason + " — " : "") + "las aperturas y su suficiencia son criterio del supervisor.", body);
     why.style.cssText = "font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.4;";
 
     const island = (result.verification && result.verification.island) || [];
@@ -2021,6 +2088,7 @@
         settings: { maxRequests: 260, maxMilliseconds: 180000, readSources: true }
       });
       drawZoneResult(result);
+      drawZoneRoute(result);
       showZoneReport(result);
     } catch (error) {
       showToast("No se pudo verificar: " + (error && error.message ? error.message : error), true);
@@ -2335,6 +2403,19 @@
 
   function loadProjectData(data) {
     state.zones.clear();
+    // The saved outline is restored once this function has built the features, so a
+    // project opens with the zone exactly as it was left.
+    w.setTimeout(() => {
+      try {
+        if (data && data.zona && Array.isArray(data.zona.outline) && data.zona.outline.length >= 3) {
+          zoneGenerated = data.zona.outline;
+          zoneGeneratedAislada = Boolean(data.zona.aislada);
+          paintZoneOutline(zoneGenerated, zoneGeneratedAislada);
+        } else {
+          clearZoneLayer();
+        }
+      } catch (error) { /* an unreadable outline must not block the project */ }
+    }, 0);
     let idx = 0;
     for (const b of data.bloques || []) {
       const color = isHex(b.color) ? b.color : HIGH_CONTRAST_PALETTE[idx % HIGH_CONTRAST_PALETTE.length];
