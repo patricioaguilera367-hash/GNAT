@@ -4,7 +4,21 @@ Librería silenciosa: sin DOM propio, sin mutar el mapa. Responde una sola cosa:
 **dados los postes donde se va a trabajar, qué tramos quedan desenergizados y qué
 aparatos de maniobra los aíslan.**
 
-## Cargar en la consola
+## Instalación en la extensión (recomendado)
+
+`background.js` inyecta en `world: "MAIN"`, así que la librería comparte mundo con
+`webMap_`, `Acs` y `Ext`. Los dos archivos ya figuran en sus dos listas `files`,
+antes de `centrality_v10.js`.
+
+1. `chrome://extensions` → activar **Modo de desarrollador** → **Cargar
+   descomprimida** → la carpeta del repo.
+2. Recargar la pestaña de GNAT y abrir la extensión.
+3. En la consola: `__gnatZone.version` → `"1.5.0"`.
+
+No hay que pegar nada nunca más. Al recargar la extensión, recargá también la
+pestaña: el service worker nuevo reinyecta los archivos.
+
+## Cargar en la consola (sin extensión)
 
 ```js
 // 1. el motor

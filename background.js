@@ -46,7 +46,12 @@ chrome.action.onClicked.addListener(async (tab) => {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           world: "MAIN",
-          files: ["centrality_tools_core.js", "centrality_tools_v1.js"]
+          files: [
+            "tools/gnat-adapter/gnat-adapter.js",
+            "tools/gnat-adapter/gnat-adapter.browser.js",
+            "centrality_tools_core.js",
+            "centrality_tools_v1.js"
+          ]
         });
       }
       return;
@@ -55,7 +60,13 @@ chrome.action.onClicked.addListener(async (tab) => {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         world: "MAIN",
-        files: ["centrality_v10.js", "centrality_tools_core.js", "centrality_tools_v1.js"]
+        files: [
+          "tools/gnat-adapter/gnat-adapter.js",
+          "tools/gnat-adapter/gnat-adapter.browser.js",
+          "centrality_v10.js",
+          "centrality_tools_core.js",
+          "centrality_tools_v1.js"
+        ]
       });
       return;
     }
