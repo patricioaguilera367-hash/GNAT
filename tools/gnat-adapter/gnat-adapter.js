@@ -43,7 +43,15 @@
   const CODE_PAIR = /^([A-Z]{0,3}\d{4,})\s+-\s+([A-Z]{0,3}\d{4,})$/i;
   const DEVICE_TITLE = /\b(desconectador|seccional|reconectador|cuchilla|interruptor|fusible)\b/i;
   /** A pole title that can still feed a zone: energy comes from somewhere. */
-  const SOURCE_TITLE = /\b(subestaci[oó]n|reconectador|alimentador|salida de l[ií]nea|generador)\b/i;
+  /**
+   * What actually feeds MT: the feeder breaker, the head of the line, generation.
+   *
+   * A subestación de distribución (SSEE) is a transformer hung on a pole: MT feeds
+   * it and it steps down to BT, so it never feeds the medium-voltage zone. Treating
+   * one as a source blocked every zone that happened to contain it.
+   */
+  const SOURCE_TITLE = /\b(reconectador|alimentador|salida de l[ií]nea|generador|subestaci[oó]n\s+mt\/bt)\b/i;
+  const TRANSFORMER_TITLE = /(ssee|transformador|subestaci[oó]n (a[eé]rea|de distribuci[oó]n|elevada|de superficie))/i;
   const CABLES_ONLY = /^(alambre|cable|conductor)\b/i;
 
   const safeText = (value) => (typeof value === "string" ? value : value === null || value === undefined ? "" : String(value));
@@ -458,6 +466,7 @@
             if (!canSpend()) return "desconocido";
             try {
               const title = safeText(await spend(() => client.objectTitle(other.id)));
+              if (TRANSFORMER_TITLE.test(title)) continue;
               if (SOURCE_TITLE.test(title)) return "si";
             } catch (error) {
               // an unreadable title is not a source
@@ -593,6 +602,7 @@
           if (!canSpend()) continue;
           try {
             const title = safeText(await spend(() => client.objectTitle(row.id)));
+            if (TRANSFORMER_TITLE.test(title)) continue;
             if (SOURCE_TITLE.test(title)) {
               sourceIds.add(row.id);
               sources.push({ code, objectId: Number(row.id), title });
@@ -888,7 +898,7 @@
     points.filter((entry) => entry.role === "objeto" || entry.role === "punto de faenas").map((entry) => entry.code);
 
   return {
-    version: "1.7.0",
+    version: "1.7.1",
     auditPermit,
     convexHull,
     findWorkZone,

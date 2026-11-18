@@ -1,5 +1,5 @@
-// Centrality Local V10.1 + Centrality Tools V1.
-// Mantiene el launcher V10 y añade dos módulos de herramientas al mismo clic.
+// Centrality Local V10.1 + motor de zona (gnat-adapter).
+// Inyecta en el mundo MAIN para compartir webMap_ / Acs / Ext con la página.
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   try {
@@ -34,26 +34,6 @@ chrome.action.onClicked.addListener(async (tab) => {
           w?.__centralityV10?.toggle?.();
         }
       });
-      // Ensure the tools add-on is present without resetting its current UI state.
-      const [toolsState] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        world: "MAIN",
-        func: () => ({
-          installed: Boolean(document.querySelector("iframe#content")?.contentWindow?.__centralityToolsV1?.toggle)
-        })
-      });
-      if (!toolsState?.result?.installed) {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          world: "MAIN",
-          files: [
-            "tools/gnat-adapter/gnat-adapter.js",
-            "tools/gnat-adapter/gnat-adapter.browser.js",
-            "centrality_tools_core.js",
-            "centrality_tools_v1.js"
-          ]
-        });
-      }
       return;
     }
     if (state?.status === "ready") {
@@ -63,9 +43,7 @@ chrome.action.onClicked.addListener(async (tab) => {
         files: [
           "tools/gnat-adapter/gnat-adapter.js",
           "tools/gnat-adapter/gnat-adapter.browser.js",
-          "centrality_v10.js",
-          "centrality_tools_core.js",
-          "centrality_tools_v1.js"
+          "centrality_v10.js"
         ]
       });
       return;

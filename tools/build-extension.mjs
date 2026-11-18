@@ -23,8 +23,6 @@ const OUT_ROOT = join(ROOT, "build-versions");
 const RUNTIME_FILES = [
   "background.js",
   "centrality_v10.js",
-  "centrality_tools_core.js",
-  "centrality_tools_v1.js",
   "tools/gnat-adapter/gnat-adapter.js",
   "tools/gnat-adapter/gnat-adapter.browser.js",
 ];

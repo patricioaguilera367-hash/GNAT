@@ -368,6 +368,36 @@ function makeChainClient(config = {}) {
   assert.ok(audit.findings.some((finding) => finding.level === "bloqueante" && /ZZ9999/.test(finding.text)));
 }
 
+// A distribution transformer (SSEE) is fed from MT; it never feeds the zone.
+{
+  const client = makeChainClient({ withSource: true });
+  const original = client.objectTitle;
+  let probe = null;
+  client.objectTitle = async (id) => {
+    if (id === 6001) return "Detalle de Subestación F54309";
+    return original(id);
+  };
+  client.pointObjects = async (lon, lat) => {
+    let best = 0;
+    for (let i = 1; i < CHAIN.length; i += 1) {
+      if (Math.abs(lon - chainPoint(i).lon) < Math.abs(lon - chainPoint(best).lon)) best = i;
+    }
+    const rows = [];
+    if (best > 0) rows.push({ id: 7000 + best, display: `${CHAIN[best - 1]} - ${CHAIN[best]}`, type: "Alambre Cu Duro Des 6 AWG 2-fas MT" });
+    if (best < CHAIN.length - 1) rows.push({ id: 7100 + best, display: `${CHAIN[best]} - ${CHAIN[best + 1]}`, type: "Alambre Cu Duro Des 6 AWG 2-fas MT" });
+    if (best === 2) rows.push({ id: 6001, display: "F54309", type: "" });
+    return rows;
+  };
+  probe = await zone.verifyAperturas({
+    workCodes: ["PA1004"],
+    openCodes: [{ code: "PA1002" }],
+    client,
+    settings: { maxRequests: 400, readSources: true },
+  });
+  assert.equal(probe.sources.length, 0, "an SSEE is a load, not a source");
+  assert.equal(probe.valid, true, probe.reason);
+}
+
 // The outline is a hull, not the input order.
 {
   const square = [
