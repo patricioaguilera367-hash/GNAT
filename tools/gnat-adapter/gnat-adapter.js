@@ -119,7 +119,13 @@
    * Returns the raw rows so each caller keeps its own classification, and
    * `complete: false` when the budget cut the ring short.
    */
-  const ringAt = async ({ client, settings, spend, canSpend, point }) => {
+  const memoOf = (settings) => (settings.memo instanceof Map ? settings.memo : null);
+
+  const ringAt = async ({ client, settings, spend, canSpend, point, code }) => {
+    const memo = memoOf(settings);
+    const key = code ? `ring:${code}` : null;
+    if (memo && key && memo.has(key)) return memo.get(key);
+
     const rows = [];
     let complete = true;
     for (const tuning of settings.pointTuning) {
@@ -136,7 +142,10 @@
       for (const row of Array.isArray(batch) ? batch : []) rows.push(row);
       if (rows.some((row) => codePairOf(row && row.display))) break;
     }
-    return { rows, complete };
+    const result = { rows, complete };
+    // Only a complete ring is worth remembering; a truncated one is not evidence.
+    if (memo && key && complete && rows.length > 0) memo.set(key, result);
+    return result;
   };
 
   /** A spender shared across phases, so the wall clock is not restarted mid-run. */
@@ -247,7 +256,7 @@
     for (const entry of resolved) {
       if (!canSpend()) break;
       let found = false;
-      const ring = await ringAt({ client, settings, spend, canSpend, point: entry.lonlat });
+      const ring = await ringAt({ client, settings, spend, canSpend, point: entry.lonlat, code: entry.code });
       for (const row of ring.rows) {
         const key = safeText(row && row.id);
         if (!objects.has(key)) objects.set(key, { id: row.id, display: row.display, type: row.type });
@@ -411,7 +420,7 @@
     const ringObjects = async (point, code) => {
       const spans = [];
       const others = [];
-      const ring = await ringAt({ client, settings, spend, canSpend, point });
+      const ring = await ringAt({ client, settings, spend, canSpend, point, code });
       if (!ring.complete) partial = true;
       for (const row of ring.rows) {
         const pair = codePairOf(row && row.display);
@@ -508,6 +517,13 @@
     };
 
     const resolvePoint = async (code) => {
+      const memo = memoOf(settings);
+      const key = `point:${code}`;
+      if (memo && memo.has(key)) {
+        const cached = memo.get(key);
+        seenPoints.add(code);
+        return cached;
+      }
       if (!canSpend()) return null;
       let rows = [];
       try {
@@ -525,7 +541,10 @@
           try {
             const payload = await spend(() => client.geojson([id]));
             const point = featureList(payload).map(pointOfFeature).find(Boolean);
-            if (point) return point;
+            if (point) {
+              if (memo) memo.set(key, point);
+              return point;
+            }
           } catch (error) {
             // try the next id
           }
@@ -555,7 +574,7 @@
       seenPoints.add(code);
 
       let found = false;
-      const ring = await ringAt({ client, settings, spend, canSpend, point });
+      const ring = await ringAt({ client, settings, spend, canSpend, point, code });
       if (!ring.complete) partial = true;
       for (const row of ring.rows) {
         const pair = codePairOf(row && row.display);
@@ -694,6 +713,10 @@
 
     const spender = makeSpender(settings, settings.budget);
     settings.budget = spender.state;
+    // One memo for the whole run: the audit and its verification must never ask
+    // GNAT twice for the same pole.
+    if (!(settings.memo instanceof Map)) settings.memo = new Map();
+    const memo = settings.memo;
     const canSpend = spender.canSpend;
     const spend = spender.spend;
     const used = spender.state;
@@ -738,7 +761,10 @@
           try {
             const payload = await spend(() => client.geojson([id]));
             const point = featureList(payload).map(pointOfFeature).find(Boolean);
-            if (point) return { point, objectId: Number(row.object_id), display: row.display, matches: exact.length };
+            if (point) {
+              memo.set(`point:${code}`, point);
+              return { point, objectId: Number(row.object_id), display: row.display, matches: exact.length };
+            }
           } catch (error) {
             // try the next id
           }
@@ -750,7 +776,7 @@
     const ring = async (point, code) => {
       const spans = [];
       const others = [];
-      const found = await ringAt({ client, settings, spend, canSpend, point });
+      const found = await ringAt({ client, settings, spend, canSpend, point, code });
       for (const row of found.rows) {
         const pair = codePairOf(row && row.display);
         if (!pair) {
@@ -862,7 +888,7 @@
     points.filter((entry) => entry.role === "objeto" || entry.role === "punto de faenas").map((entry) => entry.code);
 
   return {
-    version: "1.6.0",
+    version: "1.7.0",
     auditPermit,
     convexHull,
     findWorkZone,
