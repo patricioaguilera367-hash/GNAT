@@ -1849,7 +1849,8 @@
     const ring = outline.map((pair) => ol.proj.fromLonLat([Number(pair[0]), Number(pair[1])]));
     ring.push(ring[0]);
     const feature = new ol.Feature({ geometry: new ol.geom.Polygon([ring]) });
-    const edgeColor = aislada ? "#1f9d55" : "#d92b2b";
+    // The zone is a reference, not a verdict: always the same neutral colour.
+    const edgeColor = "#e0761a";
     const handleStyle = () => new ol.style.Style({
       image: new ol.style.Circle({
         radius: 7,
@@ -1861,7 +1862,7 @@
     // to be drawn, one per vertex, or nobody knows what to grab.
     const zoneStyle = (feat) => {
       const styles = [new ol.style.Style({
-        fill: new ol.style.Fill({ color: aislada ? "rgba(31,157,85,.10)" : "rgba(217,43,43,.14)" }),
+        fill: new ol.style.Fill({ color: "rgba(224,118,26,.10)" }),
         stroke: new ol.style.Stroke({ color: edgeColor, width: 2.5, lineDash: [7, 5] })
       })];
       try {
@@ -1882,17 +1883,54 @@
     });
     map.addLayer(zoneResultLayer);
     if (ol.interaction && ol.interaction.Modify) {
-      try { setCursorMode("nav"); } catch (error) { /* no toolbar yet */ }
-      zoneModify = new ol.interaction.Modify({
-        source: zoneResultLayer.getSource(),
-        pixelTolerance: 12,
-        deleteCondition: (event) => Boolean(event.originalEvent && event.originalEvent.altKey),
-        insertVertexCondition: (event) => Boolean(event.originalEvent && event.originalEvent.ctrlKey)
-      });
-      map.addInteraction(zoneModify);
-      showToast("Zona dibujada (nodos blancos). Arrastrá un nodo · Ctrl+clic en el borde agrega · Alt+clic borra.");
+      showToast("Zona dibujada. Usá Herramientas ▾ → ✏️ Editar zona para ajustarla.");
     } else {
       showToast("Zona dibujada. Este mapa no expone el editor de vértices.", true);
+    }
+  }
+
+  let zoneEditBanner = null;
+
+  function setZoneEditMode(on) {
+    if (!zoneResultLayer) {
+      showToast("Primero generá la zona.", true);
+      return;
+    }
+    if (on) {
+      if (!(ol.interaction && ol.interaction.Modify)) {
+        showToast("Este mapa no expone el editor de vértices.", true);
+        return;
+      }
+      try { setCursorMode("nav"); } catch (error) { /* toolbar may be hidden */ }
+      if (!zoneModify) {
+        zoneModify = new ol.interaction.Modify({
+          source: zoneResultLayer.getSource(),
+          pixelTolerance: 14,
+          // Plain click on an edge inserts a node; Alt+click removes one.
+          insertVertexCondition: () => true,
+          deleteCondition: (event) => Boolean(event.originalEvent && event.originalEvent.altKey)
+        });
+        map.addInteraction(zoneModify);
+      }
+      if (!zoneEditBanner) {
+        zoneEditBanner = doc.createElement("div");
+        zoneEditBanner.textContent = "EDITANDO ZONA · arrastrá un nodo blanco · clic sobre el borde agrega uno · Alt+clic borra · volvé a Herramientas ▾ → Terminar edición";
+        zoneEditBanner.style.cssText = "position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:2147483000;" +
+          "background:#e0761a;color:#fff;font:600 12px/1.4 system-ui,sans-serif;padding:8px 14px;border-radius:8px;" +
+          "box-shadow:0 4px 14px rgba(0,0,0,.3);max-width:92vw;text-align:center";
+        doc.body.appendChild(zoneEditBanner);
+      }
+      showToast("Edición de zona activada.");
+    } else {
+      if (zoneModify) {
+        try { map.removeInteraction(zoneModify); } catch (error) { /* already gone */ }
+        zoneModify = null;
+      }
+      if (zoneEditBanner) {
+        zoneEditBanner.remove();
+        zoneEditBanner = null;
+      }
+      showToast("Edición de zona terminada.");
     }
   }
 
@@ -1916,20 +1954,19 @@
     modalBackdrop.classList.remove("hidden");
     const card = el("div", "modal-card", null, modalBackdrop);
     const head = el("div", "modal-head", null, card);
-    el("h2", "", "Verificación de zona", head);
+    el("h2", "", "Zona de trabajo (T/D/F)", head);
     const bClose = el("button", "btn-outline", "Cerrar", head);
     bClose.onclick = closeModal;
 
     const body = el("div", "modal-body", null, card);
-    const valid = Boolean(result.verification && result.verification.valid);
     const verdict = el("div", "", null, body);
-    verdict.style.cssText = "font-weight:800;font-size:15px;margin-bottom:6px;color:" + (valid ? "#1f9d55" : "#d92b2b");
-    verdict.textContent = valid ? "La zona queda aislada." : "La zona NO queda aislada.";
-    const why = el("div", "", result.verification && result.verification.reason ? result.verification.reason : result.status, body);
-    why.style.cssText = "font-size:12px;color:var(--text-secondary);margin-bottom:12px;";
+    verdict.style.cssText = "font-weight:800;font-size:15px;margin-bottom:6px;color:#e0761a";
+    verdict.textContent = "Zona de referencia: " + result.points.length + " poste(s)";
+    const why = el("div", "", "Las aperturas y su suficiencia son criterio del supervisor. Esto es una ayuda visual para ubicar códigos y tramos.", body);
+    why.style.cssText = "font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.4;";
 
     const island = (result.verification && result.verification.island) || [];
-    el("div", "", "Isla sin tensión (" + island.length + "): " + (island.length ? island.join(", ") : "—"), body);
+    el("div", "", "Códigos en la zona (" + island.length + "): " + (island.length ? island.join(", ") : "—"), body);
     const diagnostics = (result.verification && result.verification.diagnostics) || [];
     const sinTramos = diagnostics.filter((entry) => entry.tramos === 0);
     const viaMetadata = diagnostics.filter((entry) => entry.fuente === "metadata" || entry.fuente === "busqueda").length;
@@ -1939,7 +1976,7 @@
       (sinTramos.length ? " · sin tramos MT: " + sinTramos.map((entry) => entry.code).join(", ") : ""), body);
     walkInfo.style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:4px";
     const boundary = (result.verification && result.verification.boundary) || [];
-    el("div", "", "Frontera: " + (boundary.length ? boundary.join(", ") : "—"), body).style.marginTop = "6px";
+    el("div", "", "Aparatos de maniobra hallados: " + (boundary.length ? boundary.join(", ") : "—"), body).style.marginTop = "6px";
     el("div", "", result.budget ? "Coste: " + result.budget.requests + " requests · " + Math.round(result.budget.elapsedMs / 1000) + " s" : "", body).style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:10px";
 
     el("div", "", "Polígono: referencia visual de la zona verificada. No se guarda con el proyecto; se regenera al verificar. Para ajustarlo: modo Navegar, arrastrar los nodos blancos.", body)
@@ -1959,7 +1996,7 @@
 
     const findings = (result.findings || []).filter((f) => f.level !== "info");
     if (findings.length) {
-      el("div", "", "Hallazgos", body).style.cssText = "font-weight:700;margin-top:12px;margin-bottom:4px";
+      el("div", "", "Notas", body).style.cssText = "font-weight:700;margin-top:12px;margin-bottom:4px";
       findings.forEach((f) => {
         const row = el("div", "", (f.level === "bloqueante" ? "⛔ " : "⚠️ ") + f.text, body);
         row.style.cssText = "font-size:12px;margin-bottom:3px;color:" + (f.level === "bloqueante" ? "#d92b2b" : "var(--text-secondary)");
@@ -2002,11 +2039,17 @@
       const bPreset = el("button", "pop-item", "📄 Cargar permiso PT (preset .json)...", pop);
       bPreset.onclick = () => { closePopover(); openPresetPicker(); };
 
-      const bVerify = el("button", "pop-item", "✅ Verificar zona (T/D/F)...", pop);
+      const bVerify = el("button", "pop-item", "🗺 Generar zona de trabajo (T/D/F)...", pop);
       bVerify.onclick = () => { closePopover(); verificarZona(); };
+
+      const bEditZone = el("button", "pop-item", "✏️ Editar zona (arrastrar nodos)", pop);
+      bEditZone.onclick = () => { closePopover(); setZoneEditMode(true); };
 
       const bRestore = el("button", "pop-item", "↺ Restaurar polígono generado", pop);
       bRestore.onclick = () => { closePopover(); restoreZoneOutline(); };
+
+      const bEditOff = el("button", "pop-item", "✔️ Terminar edición de zona", pop);
+      bEditOff.onclick = () => { closePopover(); setZoneEditMode(false); };
 
       el("div", "pop-sep", null, pop);
       const bPdf = el("button", "pop-item", "🖨 Exportar plano PDF (A1 / Atlas)...", pop);
