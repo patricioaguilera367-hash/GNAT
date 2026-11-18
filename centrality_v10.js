@@ -1795,6 +1795,116 @@
     picker.click();
   }
 
+  // =========================================================================
+  // VERIFICACIÓN DE ZONA (T/D/F) — el permiso se contrasta contra la red
+  // =========================================================================
+  let zoneResultLayer = null;
+
+  function permitFromMap() {
+    const rows = state.points
+      .map((f) => ({
+        codigo: String(f.get("codigo") || ""),
+        tipo: String(f.get("tipo") || ""),
+        bloque: String(f.get("bloqueId") || ""),
+        equipo: String(f.get("tipoEquipo") || ""),
+      }))
+      .filter((r) => r.codigo);
+    const uniq = (list) => [...new Set(list)];
+    const trabajo = rows.filter((r) => r.bloque === "T" && r.tipo !== "APERTURA").map((r) => r.codigo);
+    const aperturas = rows.filter((r) => r.tipo === "APERTURA").map((r) => r.codigo);
+    const tierras = rows.filter((r) => r.bloque !== "" && r.tipo === "PUNTO" && r.equipo !== "" && /tierra/i.test(r.equipo)).map((r) => r.codigo);
+    const frontera = rows.filter((r) => r.bloque === "F").map((r) => r.codigo);
+    return {
+      objectCode: uniq(frontera)[0] || uniq(trabajo)[0] || null,
+      workCodes: uniq(trabajo),
+      openCodes: uniq(aperturas),
+      groundCodes: uniq(tierras),
+      siteCodes: uniq(frontera),
+    };
+  }
+
+  function clearZoneLayer() {
+    if (zoneResultLayer) {
+      try { map.removeLayer(zoneResultLayer); } catch (error) { /* already gone */ }
+      zoneResultLayer = null;
+    }
+  }
+
+  function drawZoneResult(result) {
+    clearZoneLayer();
+    const outline = Array.isArray(result.outline) ? result.outline : [];
+    if (outline.length < 3) return;
+    const ring = outline.map((pair) => ol.proj.fromLonLat([Number(pair[0]), Number(pair[1])]));
+    ring.push(ring[0]);
+    const feature = new ol.Feature({ geometry: new ol.geom.Polygon([ring]) });
+    const aislada = Boolean(result.verification && result.verification.valid);
+    zoneResultLayer = new ol.layer.Vector({
+      source: new ol.source.Vector({ features: [feature] }),
+      style: new ol.style.Style({
+        fill: new ol.style.Fill({ color: aislada ? "rgba(31,157,85,.10)" : "rgba(217,43,43,.14)" }),
+        stroke: new ol.style.Stroke({ color: aislada ? "#1f9d55" : "#d92b2b", width: 2.5, lineDash: [7, 5] })
+      }),
+      zIndex: 60
+    });
+    map.addLayer(zoneResultLayer);
+  }
+
+  function showZoneReport(result) {
+    modalBackdrop.replaceChildren();
+    modalBackdrop.classList.remove("hidden");
+    const card = el("div", "modal-card", null, modalBackdrop);
+    const head = el("div", "modal-head", null, card);
+    el("h2", "", "Verificación de zona", head);
+    const bClose = el("button", "btn-outline", "Cerrar", head);
+    bClose.onclick = closeModal;
+
+    const body = el("div", "modal-body", null, card);
+    const valid = Boolean(result.verification && result.verification.valid);
+    const verdict = el("div", "", null, body);
+    verdict.style.cssText = "font-weight:800;font-size:15px;margin-bottom:6px;color:" + (valid ? "#1f9d55" : "#d92b2b");
+    verdict.textContent = valid ? "La zona queda aislada." : "La zona NO queda aislada.";
+    const why = el("div", "", result.verification && result.verification.reason ? result.verification.reason : result.status, body);
+    why.style.cssText = "font-size:12px;color:var(--text-secondary);margin-bottom:12px;";
+
+    const island = (result.verification && result.verification.island) || [];
+    el("div", "", "Isla sin tensión (" + island.length + "): " + (island.length ? island.join(", ") : "—"), body);
+    const boundary = (result.verification && result.verification.boundary) || [];
+    el("div", "", "Frontera: " + (boundary.length ? boundary.join(", ") : "—"), body).style.marginTop = "6px";
+    el("div", "", result.budget ? "Coste: " + result.budget.requests + " requests · " + Math.round(result.budget.elapsedMs / 1000) + " s" : "", body).style.cssText = "font-size:12px;color:var(--text-secondary);margin-top:10px";
+
+    const findings = (result.findings || []).filter((f) => f.level !== "info");
+    if (findings.length) {
+      el("div", "", "Hallazgos", body).style.cssText = "font-weight:700;margin-top:12px;margin-bottom:4px";
+      findings.forEach((f) => {
+        const row = el("div", "", (f.level === "bloqueante" ? "⛔ " : "⚠️ ") + f.text, body);
+        row.style.cssText = "font-size:12px;margin-bottom:3px;color:" + (f.level === "bloqueante" ? "#d92b2b" : "var(--text-secondary)");
+      });
+    }
+  }
+
+  async function verificarZona() {
+    const zoneApi = (w && w.__gnatZone) || (typeof globalThis !== "undefined" ? globalThis.__gnatZone : null);
+    if (!zoneApi || typeof zoneApi.auditPermitLive !== "function") {
+      showToast("El motor de zona no está cargado: revisá la extensión.", true);
+      return;
+    }
+    const permit = permitFromMap();
+    if (!permit.workCodes.length) {
+      showToast("El proyecto no tiene zona de trabajo (T). Cargá un permiso primero.", true);
+      return;
+    }
+    showToast("Verificando la zona contra GNAT...");
+    try {
+      const result = await zoneApi.auditPermitLive(permit, {
+        settings: { maxRequests: 260, maxMilliseconds: 180000, readSources: true }
+      });
+      drawZoneResult(result);
+      showZoneReport(result);
+    } catch (error) {
+      showToast("No se pudo verificar: " + (error && error.message ? error.message : error), true);
+    }
+  }
+
   btnHerramientas.onclick = () => {
     const r = btnHerramientas.getBoundingClientRect();
     showPopoverAt(r.left, r.bottom + 6, (pop) => {
@@ -1806,6 +1916,9 @@
 
       const bPreset = el("button", "pop-item", "📄 Cargar permiso PT (preset .json)...", pop);
       bPreset.onclick = () => { closePopover(); openPresetPicker(); };
+
+      const bVerify = el("button", "pop-item", "✅ Verificar zona (T/D/F)...", pop);
+      bVerify.onclick = () => { closePopover(); verificarZona(); };
 
       el("div", "pop-sep", null, pop);
       const bPdf = el("button", "pop-item", "🖨 Exportar plano PDF (A1 / Atlas)...", pop);

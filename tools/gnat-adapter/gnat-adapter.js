@@ -953,7 +953,9 @@
         }
         continue;
       }
-      const bloque = known.has(safeText(role.bloque)) ? safeText(role.bloque) : "T";
+      // An empty block is deliberate: an opening is a fence, not an area, and
+      // V10 draws a hull per block. Two openings 500 m apart would draw a sliver.
+      const bloque = known.has(safeText(role.bloque)) ? safeText(role.bloque) : "";
       numero += 1;
       registros.push({
         id: `${safeText(role.rol) || "P"}-${codigo}`,
@@ -967,7 +969,9 @@
         bloqueId: bloque,
         bloques: [bloque],
         aperturasIds: safeText(role.tipo) === "apertura" ? [codigo] : [],
-        tipoEquipo: safeText(role.equipo),
+        // A ground point carries its role visibly, so the verification can find it
+        // again from the map without re-reading the preset.
+        tipoEquipo: safeText(role.equipo) || (safeText(role.tipo) === "tierra" ? "Puesta a tierra" : ""),
         colorPersonalizado: "",
         rol: safeText(role.rol),
         gnat: { objectId: hit.objectId, display: hit.display },
@@ -991,7 +995,7 @@
   };
 
   return {
-    version: "1.8.0",
+    version: "1.9.0",
     buildProjectFromPreset,
     auditPermit,
     convexHull,
