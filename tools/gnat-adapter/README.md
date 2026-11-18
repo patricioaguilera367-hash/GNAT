@@ -4,7 +4,26 @@ Librería silenciosa: sin DOM propio, sin mutar el mapa. Responde una sola cosa:
 **dados los postes donde se va a trabajar, qué tramos quedan desenergizados y qué
 aparatos de maniobra los aíslan.**
 
-## Instalación en la extensión (recomendado)
+## Instalación como extensión (recomendado)
+
+Cada versión se compila a su propia carpeta cargable:
+
+```bash
+node tools/build-extension.mjs 1.5
+# → build-versions/v1.5/
+```
+
+Después: `chrome://extensions` → **Modo de desarrollador** → **Cargar
+descomprimida** → `build-versions/v1.5`.
+
+Cada build es autocontenido (manifest, background, V10, tools y el adaptador) y
+lleva el número en el nombre, así podés tener 1.5 y 1.6 cargadas a la vez y ver
+cuál es cuál. `build-versions/` no se commitea: se regenera desde el commit.
+
+**Numeración:** esta línea avanza 1.5, 1.6, 1.7… Después del merge con V10 sigue
+como 11.0, 11.1, 11.1.1.
+
+## Inyección en la extensión
 
 `background.js` inyecta en `world: "MAIN"`, así que la librería comparte mundo con
 `webMap_`, `Acs` y `Ext`. Los dos archivos ya figuran en sus dos listas `files`,
