@@ -125,6 +125,8 @@
     // Live runs read topology from the structure sheets; the radial probe stays as a
     // fallback for a pole whose sheet answers nothing.
     if (settings.metadata === undefined) settings.metadata = true;
+    // Live runs answer as a graph, never as an electrical simulation.
+    if (settings.graphOnly === undefined) settings.graphOnly = true;
     if (!settings.onProgress) {
       settings.onProgress = (info) =>
         console.info(`[gnatZone] ${info.requests} requests · ${Math.round(info.elapsedMs / 1000)} s`);

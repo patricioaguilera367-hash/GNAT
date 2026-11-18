@@ -43,6 +43,9 @@
     // A code names several objects (poste, switch, estructura); the structure is the
     // one whose sheet lists cables, so a few candidates are tried before giving up.
     maxStructureTries: 3,
+    // Graph mode: poles are nodes, spans are edges, an opening is a cut. No source
+    // hunting and no electrical verdict — the zone is whatever is still connected.
+    graphOnly: false,
   };
 
   /** `F562541` or `5236366`, at the start of a display. */
@@ -699,7 +702,7 @@
               queue.push(other);
             }
           }
-        } else if (!pair && row && row.id !== undefined && settings.readSources && !sourceIds.has(row.id)) {
+        } else if (!pair && row && row.id !== undefined && settings.readSources && !settings.graphOnly && !sourceIds.has(row.id)) {
           if (!canSpend()) continue;
           try {
             const title = safeText(await spend(() => client.objectTitle(row.id)));
@@ -745,7 +748,8 @@
     for (const code of work) roles.set(code, "trabajo");
     for (const code of opened) roles.set(code, roles.get(code) === "trabajo" ? "ambos" : "apertura");
 
-    const islandClosed = sources.length === 0 && !incomplete && boundary.length > 0;
+    // Graph answer: the zone is delimited when the walk stops at the openings.
+    const islandClosed = (settings.graphOnly ? !incomplete : sources.length === 0 && !incomplete) && boundary.length > 0;
     const poleStates = [];
     for (const [code, role] of roles.entries()) {
       if (role === "apertura" || role === "ambos") {
@@ -770,6 +774,11 @@
 
     if (work.some((code) => !cut.has(code)) && seenPoints.size === 0) {
       reason = "ningún poste de trabajo resolvió a un punto";
+    } else if (settings.graphOnly) {
+      reason = boundary.length > 0
+        ? `zona delimitada por ${boundary.length} apertura(s): ${boundary.join(", ")}`
+        : "no se alcanzó ninguna apertura desde la zona";
+      valid = boundary.length > 0 && !incomplete;
     } else if (sources.length > 0) {
       reason = `la zona sigue conectada a ${sources[0].title || "una fuente"} en ${sources[0].code}`;
     } else if (truncated) {
@@ -1144,7 +1153,7 @@
   };
 
   return {
-    version: "1.11.1",
+    version: "1.12.0",
     buildProjectFromPreset,
     auditPermit,
     convexHull,

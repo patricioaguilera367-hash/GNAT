@@ -2008,8 +2008,32 @@
     paintZoneOutline(zoneGenerated, zoneGeneratedAislada);
   }
 
+  /** The zone polygon is the shape of the poles the walk actually reached. */
+  function outlineFromZone(result) {
+    const island = (result.verification && result.verification.island) || [];
+    const wanted = new Set(island);
+    const pts = [];
+    for (const entry of result.points || []) {
+      if (entry && wanted.has(entry.code) && entry.lonlat) pts.push([entry.lonlat.lon, entry.lonlat.lat]);
+    }
+    if (pts.length < 3) return Array.isArray(result.outline) ? result.outline : null;
+    const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [];
+    for (const p of sorted) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for (const p of [...sorted].reverse()) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+  }
+
   function drawZoneResult(result) {
-    zoneGenerated = Array.isArray(result.outline) ? result.outline : null;
+    zoneGenerated = outlineFromZone(result);
     zoneGeneratedAislada = Boolean(result.verification && result.verification.valid);
     paintZoneOutline(zoneGenerated, zoneGeneratedAislada);
   }
